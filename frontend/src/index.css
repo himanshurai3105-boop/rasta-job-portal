@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-paper text-ink font-body antialiased;
+}
+
+::selection {
+  @apply bg-amber/30;
+}
+
+.focus-ring {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-amber focus-visible:ring-offset-2 focus-visible:ring-offset-paper;
+}
+
+/* Signature "runway" divider — dotted track used sparingly on homepage */
+.runway {
+  background-image: radial-gradient(circle, #C87F1E 1.5px, transparent 1.5px);
+  background-size: 14px 2px;
+  background-repeat: repeat-x;
+  background-position: center;
+  height: 2px;
+}
+
+/* One orchestrated entrance moment for the homepage hero — used once, not scattered */
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-enter {
+  animation: hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hero-enter-1 { animation-delay: 0s; }
+.hero-enter-2 { animation-delay: 0.08s; }
+.hero-enter-3 { animation-delay: 0.16s; }
+.hero-enter-4 { animation-delay: 0.24s; }
+
+/* Skeleton loading shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #ECE9E1 25%, #F5F3ED 37%, #ECE9E1 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-enter {
+    animation: none;
+  }
+  .skeleton {
+    animation: none;
+    background: #ECE9E1;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   Dark mode — overrides the compiled utility classes directly
+   (bg-white, text-ink, border-ink/10, etc.) so components never
+   need dark: variants scattered through every file. The "ink"
+   token stays literal where it's used as a fixed dark surface
+   (bg-ink navbar/buttons, always paired with text-paper) — only
+   the page-level and card-level usages flip here.
+   ============================================================ */
+
+.dark body {
+  background-color: #0F1115;
+  color: #E9E7E0;
+}
+
+/* Card / panel surfaces */
+.dark .bg-white {
+  background-color: #171A21;
+}
+
+/* Body text that used the light-mode "ink" foreground */
+.dark .text-ink {
+  color: #E9E7E0;
+}
+.dark .text-ink\/80 { color: rgba(233, 231, 224, 0.8); }
+.dark .text-ink\/70 { color: rgba(233, 231, 224, 0.7); }
+.dark .text-ink\/60 { color: rgba(233, 231, 224, 0.6); }
+.dark .text-ink\/50 { color: rgba(233, 231, 224, 0.5); }
+.dark .text-ink\/40 { color: rgba(233, 231, 224, 0.4); }
+
+/* Borders */
+.dark .border-ink\/10 { border-color: rgba(255, 255, 255, 0.1); }
+.dark .border-ink\/5 { border-color: rgba(255, 255, 255, 0.06); }
+.dark .border-ink\/30 { border-color: rgba(255, 255, 255, 0.25); }
+
+/* Subtle fill pills / tab backgrounds (e.g. admin tab bar, skill chips) */
+.dark .bg-ink\/5 { background-color: rgba(255, 255, 255, 0.05); }
+.dark .bg-ink\/10 { background-color: rgba(255, 255, 255, 0.08); }
+
+/* The one page-level (non-navbar) use of bg-paper — the MCQ test's sticky header */
+.dark .bg-paper\/95 { background-color: rgba(15, 17, 21, 0.95); }
+
+/* Error banners */
+.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.12); }
+.dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.18); }
+.dark .text-red-700 { color: #FCA5A5; }
+.dark .text-red-600 { color: #FCA5A5; }
+.dark .text-red-500 { color: #FCA5A5; }
+.dark .border-red-300 { border-color: rgba(239, 68, 68, 0.4); }
+
+/* Form controls — most inputs in this app rely on the browser's default
+   white background, which needs an explicit dark surface here */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #171A21;
+  color: #E9E7E0;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgba(233, 231, 224, 0.35);
+}
+
+.dark .skeleton {
+  background: linear-gradient(90deg, #1C2029 25%, #242933 37%, #1C2029 63%);
+  background-size: 200% 100%;
+}
+
+.dark .focus-ring:focus-visible {
+  --tw-ring-offset-color: #0F1115;
+}
+
+/* Known limitation: recharts (analytics/insights) render inline SVG with
+   fixed brand colors — they stay legible in dark mode but don't fully
+   re-theme their grid lines. */

@@ -1,0 +1,36 @@
+// A curated list of major Indian cities and states for location autocomplete.
+// Kept client-side and static — no network call needed for suggestions to feel instant.
+export const INDIAN_LOCATIONS = [
+  "Mumbai, Maharashtra", "Delhi", "Bengaluru, Karnataka", "Hyderabad, Telangana",
+  "Ahmedabad, Gujarat", "Chennai, Tamil Nadu", "Kolkata, West Bengal", "Surat, Gujarat",
+  "Pune, Maharashtra", "Jaipur, Rajasthan", "Lucknow, Uttar Pradesh", "Kanpur, Uttar Pradesh",
+  "Nagpur, Maharashtra", "Indore, Madhya Pradesh", "Thane, Maharashtra", "Bhopal, Madhya Pradesh",
+  "Visakhapatnam, Andhra Pradesh", "Patna, Bihar", "Vadodara, Gujarat", "Ghaziabad, Uttar Pradesh",
+  "Ludhiana, Punjab", "Agra, Uttar Pradesh", "Nashik, Maharashtra", "Faridabad, Haryana",
+  "Meerut, Uttar Pradesh", "Rajkot, Gujarat", "Kalyan, Maharashtra", "Vasai, Maharashtra",
+  "Varanasi, Uttar Pradesh", "Srinagar, Jammu and Kashmir", "Aurangabad, Maharashtra",
+  "Dhanbad, Jharkhand", "Amritsar, Punjab", "Navi Mumbai, Maharashtra", "Allahabad, Uttar Pradesh",
+  "Ranchi, Jharkhand", "Howrah, West Bengal", "Coimbatore, Tamil Nadu", "Jabalpur, Madhya Pradesh",
+  "Gwalior, Madhya Pradesh", "Vijayawada, Andhra Pradesh", "Jodhpur, Rajasthan", "Madurai, Tamil Nadu",
+  "Raipur, Chhattisgarh", "Kota, Rajasthan", "Chandigarh", "Guwahati, Assam",
+  "Solapur, Maharashtra", "Hubballi, Karnataka", "Mysuru, Karnataka", "Tiruchirappalli, Tamil Nadu",
+  "Bareilly, Uttar Pradesh", "Aligarh, Uttar Pradesh", "Tiruppur, Tamil Nadu", "Gurugram, Haryana",
+  "Moradabad, Uttar Pradesh", "Jalandhar, Punjab", "Bhubaneswar, Odisha", "Salem, Tamil Nadu",
+  "Warangal, Telangana", "Guntur, Andhra Pradesh", "Bhiwandi, Maharashtra", "Saharanpur, Uttar Pradesh",
+  "Gorakhpur, Uttar Pradesh", "Bikaner, Rajasthan", "Amravati, Maharashtra", "Noida, Uttar Pradesh",
+  "Jamshedpur, Jharkhand", "Bhilai, Chhattisgarh", "Cuttack, Odisha", "Kochi, Kerala",
+  "Nellore, Andhra Pradesh", "Bhavnagar, Gujarat", "Dehradun, Uttarakhand", "Durgapur, West Bengal",
+  "Asansol, West Bengal", "Rourkela, Odisha", "Nanded, Maharashtra", "Kolhapur, Maharashtra",
+  "Ajmer, Rajasthan", "Akola, Maharashtra", "Gulbarga, Karnataka", "Jamnagar, Gujarat",
+  "Ujjain, Madhya Pradesh", "Loni, Uttar Pradesh", "Siliguri, West Bengal", "Jhansi, Uttar Pradesh",
+  "Ulhasnagar, Maharashtra", "Jammu, Jammu and Kashmir", "Mangaluru, Karnataka", "Erode, Tamil Nadu",
+  "Belgaum, Karnataka", "Kurnool, Andhra Pradesh", "Tirunelveli, Tamil Nadu", "Malegaon, Maharashtra",
+  "Gaya, Bihar", "Udaipur, Rajasthan", "Maheshtala, West Bengal",
+  // States (for broader search)
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
+  "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra",
+  "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim",
+  "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  // Remote / common values
+  "Remote",
+];
