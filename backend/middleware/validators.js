@@ -114,15 +114,15 @@ export const updateJobValidator = [
 
 export const jobIdValidator = [param("id").isMongoId().withMessage("Invalid job id")];
 
-export const jobQueryValidator = [
-  query("page").optional().isInt({ min: 1 }).toInt(),
-  query("limit").optional().isInt({ min: 1, max: 50 }).toInt(),
-  query("keyword").optional().trim().isLength({ max: 100 }),
-  query("location").optional().trim().isLength({ max: 100 }),
-  query("salaryMin").optional().isFloat({ min: 0 }),
-  query("salaryMax").optional().isFloat({ min: 0 }),
-  query("skills").optional().trim().isLength({ max: 200 }),
-];
+  export const jobQueryValidator = [
+    query("page").optional({ values: "falsy" }).isInt({ min: 1 }).toInt(),
+    query("limit").optional({ values: "falsy" }).isInt({ min: 1, max: 50 }).toInt(),
+    query("keyword").optional({ values: "falsy" }).trim().isLength({ max: 100 }),
+    query("location").optional({ values: "falsy" }).trim().isLength({ max: 100 }),
+    query("salaryMin").optional({ values: "falsy" }).isFloat({ min: 0 }),
+    query("salaryMax").optional({ values: "falsy" }).isFloat({ min: 0 }),
+    query("skills").optional({ values: "falsy" }).trim().isLength({ max: 200 }),
+  ];
 
 // ---------- Applications ----------
 export const applyValidator = [
