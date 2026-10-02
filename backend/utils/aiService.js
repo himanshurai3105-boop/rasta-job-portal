@@ -125,8 +125,95 @@ Respond with ONLY a JSON object in this exact shape:
  * Returns [{ question, options: [4 strings], correctIndex }]
  */
 export const generateMCQTest = async ({ jobTitle, jobDescription, skills }) => {
-  const system = `You are a subject-matter expert creating a 10-question multiple-choice screening test
-for the role "${jobTitle}". Focus on practical, job-relevant knowledge from these skills/topics: ${(skills || []).join(", ") || "the role's core responsibilities"}.
+  // 1. Agar Anthropic API key nahi hai, toh fallback mock test return karo
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.warn("ANTHROPIC_API_KEY missing - serving default mock test");
+    return [
+      {
+        question: `In the context of ${jobTitle || "software development"}, what is the main purpose of version control systems like Git?`,
+        options: [
+          "To compile source code into machine code",
+          "To track and manage changes to codebase over time",
+          "To host live databases in cloud",
+          "To design user interfaces automatically"
+        ],
+        correctIndex: 1
+      },
+      {
+        question: "Which HTTP status code signifies that a requested resource was created successfully?",
+        options: ["200 OK", "201 Created", "204 No Content", "400 Bad Request"],
+        correctIndex: 1
+      },
+      {
+        question: "Which data structure operates on a First-In-First-Out (FIFO) basis?",
+        options: ["Stack", "Queue", "Tree", "Graph"],
+        correctIndex: 1
+      },
+      {
+        question: "What is the primary role of an index in a database?",
+        options: [
+          "To compress database file size",
+          "To speed up data retrieval queries",
+          "To encrypt sensitive passwords",
+          "To create automatic database backups"
+        ],
+        correctIndex: 1
+      },
+      {
+        question: "In web architecture, what is the main responsibility of a reverse proxy?",
+        options: [
+          "Running front-end CSS animations",
+          "Distributing network traffic and load balancing",
+          "Compiling backend TypeScript files",
+          "Rendering HTML in user browser"
+        ],
+        correctIndex: 1
+      },
+      {
+        question: "What does the ACID property stand for in database management systems?",
+        options: [
+          "Atomicity, Consistency, Isolation, Durability",
+          "Access, Control, Integration, Delivery",
+          "Authentication, Cipher, Integrity, Decryption",
+          "Asynchronous, Concurrent, Isolated, Dynamic"
+        ],
+        correctIndex: 0
+      },
+      {
+        question: "Which of the following is an idempotent HTTP method?",
+        options: ["POST", "GET", "PATCH", "CONNECT"],
+        correctIndex: 1
+      },
+      {
+        question: "In RESTful API design, which method is typically used to completely replace an existing resource?",
+        options: ["POST", "PUT", "PATCH", "HEAD"],
+        correctIndex: 1
+      },
+      {
+        question: "What is the main advantage of containerization tools like Docker?",
+        options: [
+          "Faster internet connection speeds",
+          "Consistent runtime environments across development and production",
+          "Automatic code bug fixing",
+          "Eliminating the need for writing unit tests"
+        ],
+        correctIndex: 1
+      },
+      {
+        question: `When working as a ${jobTitle || "professional"}, how should critical production bugs ideally be handled?`,
+        options: [
+          "Ignore and fix them in the next major quarterly release",
+          "Directly push untested code directly to master branch without review",
+          "Reproduce, isolate, write a hotfix with tests, and follow deployment protocols",
+          "Shut down database servers immediately"
+        ],
+        correctIndex: 2
+      }
+    ];
+  }
+
+  // 2. Agar API key configured hai, toh Claude AI se generate karein
+  const system = `You are a subject-matter expert creating a 10-question multiple-choice screening test for the role "${jobTitle}". Focus on practical, job-relevant knowledge from these skills/topics: ${(skills || []).join(", ") || "the role's core responsibilities"}.
 Job context: ${jobDescription.slice(0, 1200)}
 
 Rules:
@@ -148,5 +235,6 @@ Respond with ONLY a JSON object in this exact shape:
   if (!Array.isArray(parsed.questions) || parsed.questions.length !== 10) {
     throw new Error("AI did not return exactly 10 questions");
   }
+
   return parsed.questions;
 };
