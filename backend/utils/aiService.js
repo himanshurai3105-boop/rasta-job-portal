@@ -34,7 +34,45 @@ const extractJSON = (text) => {
  * Screen a resume against a job description.
  * Returns { score: 0-100, summary, strengths: [], gaps: [] }
  */
-export const screenResume = async ({ jobTitle, jobDescription, jobRequirements, resumeText }) => {
+// backend/utils/aiService.js
+
+export const screenResume = async ({ jobTitle, jobDescription, jobRequirements = [], resumeText = "" }) => {
+  // 1. Agar Anthropic API Key nahi hai toh smart ATS match logic chalayein
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.warn("ANTHROPIC_API_KEY missing - using keyword matching ATS fallback");
+
+    const text = (resumeText || "").toLowerCase();
+    const requirements = (jobRequirements || []).map((r) => r.toLowerCase());
+
+    // Skills match count karein
+    let matchedCount = 0;
+    const matchedSkills = [];
+    const missingSkills = [];
+
+    requirements.forEach((req) => {
+      if (text.includes(req)) {
+        matchedCount++;
+        matchedSkills.push(req);
+      } else {
+        missingSkills.push(req);
+      }
+    });
+
+    // Score calculate karein (0-100)
+    const baseScore = requirements.length > 0 
+      ? Math.round((matchedCount / requirements.length) * 100) 
+      : 75; // agar requirements list empty ho toh default decent score
+
+    return {
+      score: baseScore,
+      summary: `Automated ATS Scan: Matched ${matchedCount} out of ${requirements.length} core job skills from the resume.`,
+      strengths: matchedSkills.length > 0 ? matchedSkills : ["Relevant experience in " + jobTitle],
+      gaps: missingSkills.length > 0 ? missingSkills : ["No major skill gaps identified"],
+      status: baseScore >= 75 ? "completed" : "completed"
+    };
+  }
+
+  // 2. Agar API Key hai toh Claude AI use karein
   const system = `You are an experienced technical recruiter screening a candidate's resume against a job posting.
 Be fair and objective — base your assessment only on evidence in the resume text.
 Respond with ONLY a JSON object in this exact shape, no other text:
@@ -49,7 +87,7 @@ JOB REQUIREMENTS:
 ${(jobRequirements || []).join("\n")}
 
 CANDIDATE RESUME TEXT:
-${resumeText.slice(0, 8000)}`;
+${(resumeText || "").slice(0, 8000)}`;
 
   const text = await callClaude({
     system,

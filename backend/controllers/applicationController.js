@@ -53,43 +53,35 @@ export const applyToJob = asyncHandler(async (req, res) => {
 
   res.status(201).json({ success: true, data: application });
 
-  // Fire-and-forget — notify + email employer about the new applicant
-  const employer = await User.findById(job.employer);
-  if (employer) {
-    notify({
-      user: employer._id,
-      type: "new_applicant",
-      title: "New applicant received",
-      message: `${req.user.name} applied to "${job.title}".`,
-      link: `/employer/jobs/${job._id}/applicants`,
-    });
-    const template = emailTemplates.newApplicant(job.title, req.user.name);
-    sendEmail({ to: employer.email, ...template });
-  }
-
   // Fire-and-forget — AI resume screening
-  if (resumeText) {
-    try {
-      const result = await screenResume({
-        jobTitle: job.title,
-        jobDescription: job.description,
-        jobRequirements: job.requirements,
-        resumeText,
-      });
-      await Application.findByIdAndUpdate(application._id, {
-        aiScreening: {
-          score: result.score,
-          summary: result.summary,
-          strengths: result.strengths || [],
-          gaps: result.gaps || [],
-          status: "completed",
-        },
-      });
-    } catch (err) {
-      await Application.findByIdAndUpdate(application._id, { "aiScreening.status": "failed" });
-      console.error("AI screening failed:", err.message);
-    }
+if (resumeText) {
+  try {
+    const result = await screenResume({
+      jobTitle: job.title,
+      jobDescription: job.description,
+      jobRequirements: job.skills || job.requirements || [],
+      resumeText,
+    });
+
+    // Agar resume score 75 ya usse zyada hai toh candidate ko auto-shortlist karein
+    const isShortlisted = result.score >= 75;
+
+    await Application.findByIdAndUpdate(application._id, {
+      "aiScreening.score": result.score,
+      "aiScreening.summary": result.summary,
+      "aiScreening.strengths": result.strengths || [],
+      "aiScreening.gaps": result.gaps || [],
+      "aiScreening.status": "completed",
+      ...(isShortlisted ? { status: "shortlisted" } : {})
+    });
+
+  } catch (err) {
+    await Application.findByIdAndUpdate(application._id, {
+      "aiScreening.status": "failed",
+    });
+    console.error("AI screening failed:", err.message);
   }
+}
 });
 
 // @desc    Get single application (for interview page / status checks)
