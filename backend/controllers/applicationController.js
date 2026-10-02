@@ -413,50 +413,90 @@ export const reportInterviewViolation = asyncHandler(async (req, res) => {
 // @access  Private/Jobseeker (owner only)
 export const startMCQTest = asyncHandler(async (req, res) => {
   const application = await Application.findById(req.params.id).populate("job", "title description skills");
+
   if (!application) {
     res.status(404);
     throw new Error("Application not found");
   }
+
   if (application.applicant.toString() !== req.user._id.toString()) {
     res.status(403);
     throw new Error("Not authorized");
   }
-  if (["completed", "failed_violation", "failed_timeout"].includes(application.mcqTest.status)) {
+
+  // Agar already completed hai toh reject karein
+  if (application.mcqTest && ["completed", "failed_violation", "failed_timeout"].includes(application.mcqTest.status)) {
     res.status(400);
     throw new Error("This test has already ended and cannot be retaken.");
   }
 
-  if (application.mcqTest.status === "in_progress" && application.mcqTest.questions.length > 0) {
-    // Resume — return existing questions + remaining time
+  // Agar test already in_progress hai aur questions bane huye hain, toh wahi return karein
+  if (application.mcqTest?.status === "in_progress" && application.mcqTest?.questions?.length > 0) {
     const elapsedMs = Date.now() - new Date(application.mcqTest.startedAt).getTime();
-    const remainingMs = application.mcqTest.timeLimitMinutes * 60 * 1000 - elapsedMs;
+    const limitMs = (application.mcqTest.timeLimitMinutes || 15) * 60 * 1000;
+    const remainingSeconds = Math.max(0, Math.floor((limitMs - elapsedMs) / 1000));
+
     return res.json({
       success: true,
       data: {
-        questions: application.mcqTest.questions.map((q) => ({ question: q.question, options: q.options })),
-        timeLimitMinutes: application.mcqTest.timeLimitMinutes,
-        remainingSeconds: Math.max(0, Math.floor(remainingMs / 1000)),
+        questions: application.mcqTest.questions.map((q) => ({
+          question: q.question,
+          options: q.options,
+        })),
+        timeLimitMinutes: application.mcqTest.timeLimitMinutes || 15,
+        remainingSeconds,
       },
     });
   }
 
-  const generated = await generateMCQTest({
-    jobTitle: application.job.title,
-    jobDescription: application.job.description,
-    skills: application.job.skills,
-  });
+  // Naye questions generate karein (aiService fallback mock de dega agar key nahi hai)
+  let generated = [];
+  try {
+    generated = await generateMCQTest({
+      jobTitle: application.job?.title || "Role",
+      jobDescription: application.job?.description || "",
+      skills: application.job?.skills || [],
+    });
+  } catch (err) {
+    console.error("AI Generation error fallback:", err.message);
+    // Hard fallback agar koi bhi error aaye
+    generated = [
+      {
+        question: "What is the primary role of Git in software development?",
+        options: ["Code version control", "Database hosting", "Styling websites", "Running tests automatically"],
+        correctIndex: 0
+      },
+      {
+        question: "Which HTTP status code indicates a successful resource creation?",
+        options: ["200", "201", "404", "500"],
+        correctIndex: 1
+      },
+      {
+        question: "Which of the following is used for client-side storage?",
+        options: ["localStorage", "Express Router", "Mongoose", "PostgreSQL"],
+        correctIndex: 0
+      }
+    ];
+  }
 
-  application.mcqTest.questions = generated;
-  application.mcqTest.status = "in_progress";
-  application.mcqTest.startedAt = new Date();
+  application.mcqTest = {
+    questions: generated,
+    status: "in_progress",
+    startedAt: new Date(),
+    timeLimitMinutes: 15,
+  };
+
   await application.save();
 
   res.json({
     success: true,
     data: {
-      questions: generated.map((q) => ({ question: q.question, options: q.options })),
-      timeLimitMinutes: application.mcqTest.timeLimitMinutes,
-      remainingSeconds: application.mcqTest.timeLimitMinutes * 60,
+      questions: generated.map((q) => ({
+        question: q.question,
+        options: q.options,
+      })),
+      timeLimitMinutes: 15,
+      remainingSeconds: 15 * 60,
     },
   });
 });
