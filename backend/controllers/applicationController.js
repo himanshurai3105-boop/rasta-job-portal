@@ -541,35 +541,54 @@ export const submitMCQTest = asyncHandler(async (req, res) => {
   application.mcqTest.submittedAt = new Date();
   application.mcqTest.status = timedOut ? "failed_timeout" : "completed";
 
-  // Auto-shortlist candidates who score 8/10 or higher
-  if (!timedOut && score >= 8) {
+// 80% passing rule (8/10 ya usse zyada)
+  const isPassed = !timedOut && score >= 8;
+
+  if (isPassed) {
+    application.status = "applied";
     application.mcqTest.autoShortlisted = true;
-    if (application.status === "applied" || application.status === "interview") {
-      application.status = "shortlisted";
+    await application.save();
+
+    // Employer notification
+    if (application.job) {
+      notify({
+        user: application.job.employer,
+        type: "status_update",
+        title: "Candidate passed assessment",
+        message: `A candidate scored ${score}/10 on the screening test for "${application.job.title}".`,
+        link: `/employer/jobs/${application.job._id}/applicants`,
+      });
     }
-  }
 
-  await application.save();
+    return res.json({
+      success: true,
+      passed: true,
+      message: "Congratulations! Aapne test clear kar liya hai aur aapki application submit ho gayi hai.",
+      data: {
+        score,
+        total: application.mcqTest.questions.length,
+        status: application.status,
+        autoShortlisted: true,
+      },
+    });
+  } else {
+    // 8 se kam score hone par reject aur fail message
+    application.status = "rejected";
+    application.mcqTest.autoShortlisted = false;
+    await application.save();
 
-  if (application.mcqTest.autoShortlisted) {
-    notify({
-      user: application.employer,
-      type: "status_update",
-      title: "Candidate auto-shortlisted",
-      message: `A candidate scored ${score}/10 on the screening test for "${application.job.title}" and was auto-shortlisted.`,
-      link: `/employer/jobs/${application.job._id}/applicants`,
+    return res.json({
+      success: false,
+      passed: false,
+      message: "Sorry, aap test clear nahi kar paye. Better luck next time!",
+      data: {
+        score,
+        total: application.mcqTest.questions.length,
+        status: "rejected",
+        autoShortlisted: false,
+      },
     });
   }
-
-  res.json({
-    success: true,
-    data: {
-      score,
-      total: application.mcqTest.questions.length,
-      status: application.mcqTest.status,
-      autoShortlisted: application.mcqTest.autoShortlisted,
-    },
-  });
 });
 
 // @desc    Report a proctoring violation (tab switch) during the MCQ test — ends it immediately as failed
