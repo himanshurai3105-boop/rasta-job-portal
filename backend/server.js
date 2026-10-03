@@ -46,6 +46,8 @@ app.use(helmet());
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
+  "http://localhost:5174",
+   "https://rasta-job-portal.onrender.com",
   process.env.CLIENT_URL
 ].filter(Boolean); // undefined values ko clean karega
 
