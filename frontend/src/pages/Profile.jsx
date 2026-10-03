@@ -3,6 +3,7 @@ import api, { SERVER_ORIGIN } from "../api/axios.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import TagAutocompleteInput from "../components/TagAutocompleteInput.jsx";
 import { fetchLocationSuggestions } from "../api/suggestions.js";
+import { INDUSTRIES } from "../data/industries.js";
 
 const Profile = () => {
   const { user, setUser } = useAuth();
@@ -10,9 +11,15 @@ const Profile = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
   const [resumeFile, setResumeFile] = useState(null);
   const [uploadingResume, setUploadingResume] = useState(false);
   const [fileError, setFileError] = useState("");
+
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   useEffect(() => {
     if (user) {
@@ -28,6 +35,15 @@ const Profile = () => {
         preferredLocations: user.preferredLocations || [],
         preferredJobTypes: user.preferredJobTypes || [],
         preferredWorkModes: user.preferredWorkModes || [],
+        preferredIndustries: user.preferredIndustries || [],
+        tenthPercentage: user.education?.tenth?.percentage || "",
+        tenthSchool: user.education?.tenth?.schoolName || "",
+        tenthBoard: user.education?.tenth?.board || "",
+        tenthYear: user.education?.tenth?.yearOfPassing || "",
+        twelfthPercentage: user.education?.twelfth?.percentage || "",
+        twelfthSchool: user.education?.twelfth?.schoolName || "",
+        twelfthBoard: user.education?.twelfth?.board || "",
+        twelfthYear: user.education?.twelfth?.yearOfPassing || "",
         companyName: user.companyName || "",
         companyWebsite: user.companyWebsite || "",
         companyDescription: user.companyDescription || "",
@@ -37,8 +53,11 @@ const Profile = () => {
 
   const calculateCompletion = () => {
     if (!user) return 0;
-    const jobseekerFields = ["name", "phone", "headline", "skills", "resumeUrl", "experienceYears", "location"];
-    const employerFields = ["name", "phone", "companyName", "companyWebsite", "companyDescription", "companyLogoUrl"];
+    const jobseekerFields = [
+      "name", "phone", "profilePhotoUrl", "headline", "skills",
+      "resumeUrl", "experienceYears", "location",
+    ];
+    const employerFields = ["name", "phone", "profilePhotoUrl", "companyName", "companyWebsite", "companyDescription", "companyLogoUrl"];
     const fields = user.role === "employer" ? employerFields : jobseekerFields;
 
     const filled = fields.filter((f) => {
@@ -88,6 +107,21 @@ const Profile = () => {
         payload.preferredLocations = form.preferredLocations;
         payload.preferredJobTypes = form.preferredJobTypes;
         payload.preferredWorkModes = form.preferredWorkModes;
+        payload.preferredIndustries = form.preferredIndustries;
+        payload.education = {
+          tenth: {
+            percentage: form.tenthPercentage ? Number(form.tenthPercentage) : undefined,
+            schoolName: form.tenthSchool,
+            board: form.tenthBoard,
+            yearOfPassing: form.tenthYear ? Number(form.tenthYear) : undefined,
+          },
+          twelfth: {
+            percentage: form.twelfthPercentage ? Number(form.twelfthPercentage) : undefined,
+            schoolName: form.twelfthSchool,
+            board: form.twelfthBoard,
+            yearOfPassing: form.twelfthYear ? Number(form.twelfthYear) : undefined,
+          },
+        };
       } else if (user.role === "employer") {
         payload.companyName = form.companyName;
         payload.companyWebsite = form.companyWebsite;
@@ -141,6 +175,42 @@ const Profile = () => {
     }
   };
 
+  const handlePhotoChange = (e) => {
+    const file = e.target.files[0];
+    setPhotoError("");
+    if (!file) return;
+    const allowedExt = [".jpg", ".jpeg", ".png", ".webp"];
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (!allowedExt.includes(ext)) {
+      setPhotoError("Only JPG, PNG, or WEBP images are allowed");
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setPhotoError("Image must be under 3MB");
+      return;
+    }
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handlePhotoUpload = async () => {
+    if (!photoFile) return;
+    setUploadingPhoto(true);
+    setPhotoError("");
+    try {
+      const formData = new FormData();
+      formData.append("photo", photoFile);
+      const res = await api.post("/auth/me/photo", formData);
+      setUser((prev) => ({ ...prev, profilePhotoUrl: res.data.data.profilePhotoUrl }));
+      setPhotoFile(null);
+      setPhotoPreview(null);
+    } catch (err) {
+      setPhotoError(err.response?.data?.message || "Could not upload photo");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   if (!user || !form) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
@@ -149,6 +219,8 @@ const Profile = () => {
       </div>
     );
   }
+
+  const currentPhotoUrl = photoPreview || (user.profilePhotoUrl ? `${SERVER_ORIGIN}${user.profilePhotoUrl}` : null);
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-10 md:py-12">
@@ -159,7 +231,36 @@ const Profile = () => {
           : "Keep your details current so employers can reach you."}
       </p>
 
-      <div className="mt-6 p-4 rounded-2xl bg-white border border-ink/10">
+      {/* Profile photo */}
+      <div className="mt-6 p-4 rounded-2xl bg-white border border-ink/10 flex items-center gap-4">
+        <div className="w-16 h-16 rounded-full bg-ink/5 overflow-hidden shrink-0 flex items-center justify-center">
+          {currentPhotoUrl ? (
+            <img src={currentPhotoUrl} alt="Profile" className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-2xl font-display text-ink/30">{user.name?.[0]?.toUpperCase()}</span>
+          )}
+        </div>
+        <div>
+          <input
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp"
+            onChange={handlePhotoChange}
+            className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-ink file:text-paper file:text-xs file:font-medium file:cursor-pointer hover:file:bg-amber-dark file:transition-colors"
+          />
+          {photoError && <p className="text-red-600 text-xs mt-1">{photoError}</p>}
+          {photoFile && (
+            <button
+              onClick={handlePhotoUpload}
+              disabled={uploadingPhoto}
+              className="block mt-2 text-xs font-medium px-3 py-1.5 rounded-lg bg-amber text-ink hover:bg-amber-dark transition-colors focus-ring disabled:opacity-50"
+            >
+              {uploadingPhoto ? "Uploading..." : "Save photo"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 p-4 rounded-2xl bg-white border border-ink/10">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium">Profile completion</span>
           <span className={completion === 100 ? "text-success font-semibold" : "text-amber-dark font-semibold"}>
@@ -258,6 +359,31 @@ const Profile = () => {
             </div>
 
             <div className="pt-4 mt-2 border-t border-ink/10">
+              <h2 className="font-display text-lg">Education</h2>
+              <p className="text-xs text-muted mt-1">10th and 12th details, if applicable.</p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-ink/5">
+              <p className="text-sm font-medium mb-2">10th standard</p>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="number" min="0" max="100" step="0.01" placeholder="Percentage" value={form.tenthPercentage} onChange={update("tenthPercentage")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm" />
+                <input type="number" placeholder="Year of passing" value={form.tenthYear} onChange={update("tenthYear")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm" />
+                <input placeholder="School name" value={form.tenthSchool} onChange={update("tenthSchool")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm col-span-2" />
+                <input placeholder="Board (e.g. CBSE, ICSE, State Board)" value={form.tenthBoard} onChange={update("tenthBoard")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm col-span-2" />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-ink/5">
+              <p className="text-sm font-medium mb-2">12th standard</p>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="number" min="0" max="100" step="0.01" placeholder="Percentage" value={form.twelfthPercentage} onChange={update("twelfthPercentage")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm" />
+                <input type="number" placeholder="Year of passing" value={form.twelfthYear} onChange={update("twelfthYear")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm" />
+                <input placeholder="School name" value={form.twelfthSchool} onChange={update("twelfthSchool")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm col-span-2" />
+                <input placeholder="Board (e.g. CBSE, ICSE, State Board)" value={form.twelfthBoard} onChange={update("twelfthBoard")} className="px-3 py-2 rounded-lg border border-ink/10 focus-ring text-sm col-span-2" />
+              </div>
+            </div>
+
+            <div className="pt-4 mt-2 border-t border-ink/10">
               <h2 className="font-display text-lg">Job preferences</h2>
               <p className="text-xs text-muted mt-1">Helps us surface the right roles for you.</p>
             </div>
@@ -269,6 +395,16 @@ const Profile = () => {
                 onChange={update("desiredRole")}
                 placeholder="e.g. Frontend Developer, Product Manager"
                 className="w-full mt-1 px-4 py-3 rounded-xl border border-ink/10 focus-ring"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium block mb-2">Preferred industries</label>
+              <TagAutocompleteInput
+                values={form.preferredIndustries}
+                onChange={(vals) => setForm({ ...form, preferredIndustries: vals })}
+                options={INDUSTRIES}
+                placeholder="e.g. IT & Software, Sales..."
               />
             </div>
 

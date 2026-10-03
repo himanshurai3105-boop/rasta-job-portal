@@ -5,6 +5,7 @@ import JobCard from "../components/JobCard.jsx";
 import { JobCardSkeleton } from "../components/Skeletons.jsx";
 import AutocompleteInput from "../components/AutocompleteInput.jsx";
 import { fetchJobSuggestions, fetchLocationSuggestions } from "../api/suggestions.js";
+import { INDUSTRIES } from "../data/industries.js";
 
 const Jobs = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -18,6 +19,7 @@ const Jobs = () => {
   const jobType = searchParams.get("jobType") || "";
   const workMode = searchParams.get("workMode") || "";
   const experienceLevel = searchParams.get("experienceLevel") || "";
+  const category = searchParams.get("category") || "";
   const salaryMin = searchParams.get("salaryMin") || "";
   const skills = searchParams.get("skills") || "";
   const page = searchParams.get("page") || "1";
@@ -34,14 +36,14 @@ const Jobs = () => {
     setLoading(true);
     api
       .get("/jobs", {
-        params: { keyword, location, jobType, workMode, experienceLevel, salaryMin, skills, page },
+        params: { keyword, location, jobType, workMode, experienceLevel, salaryMin, skills, category, page },
       })
       .then((res) => {
         setJobs(res.data.data);
         setPagination(res.data.pagination);
       })
       .finally(() => setLoading(false));
-  }, [keyword, location, jobType, workMode, experienceLevel, salaryMin, skills, page]);
+  }, [keyword, location, jobType, workMode, experienceLevel, salaryMin, skills, category, page]);
 
   const updateFilter = (key, value) => {
     const params = new URLSearchParams(searchParams);
@@ -51,7 +53,7 @@ const Jobs = () => {
     setSearchParams(params);
   };
 
-  const activeFilterCount = [experienceLevel, salaryMin, skills].filter(Boolean).length;
+  const activeFilterCount = [experienceLevel, salaryMin, skills, category].filter(Boolean).length;
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10 md:py-12">
@@ -141,6 +143,16 @@ const Jobs = () => {
       {showMoreFilters && (
         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 mt-3 p-4 rounded-2xl bg-white border border-ink/10">
           <select
+            value={category}
+            onChange={(e) => updateFilter("category", e.target.value)}
+            className="px-4 py-2.5 rounded-full border border-ink/10 text-sm focus-ring bg-white"
+          >
+            <option value="">Any industry</option>
+            {INDUSTRIES.map((ind) => (
+              <option key={ind} value={ind}>{ind}</option>
+            ))}
+          </select>
+          <select
             value={experienceLevel}
             onChange={(e) => updateFilter("experienceLevel", e.target.value)}
             className="px-4 py-2.5 rounded-full border border-ink/10 text-sm focus-ring bg-white"
@@ -170,7 +182,7 @@ const Jobs = () => {
             <button
               onClick={() => {
                 const params = new URLSearchParams(searchParams);
-                ["experienceLevel", "salaryMin", "skills"].forEach((k) => params.delete(k));
+                ["experienceLevel", "salaryMin", "skills", "category"].forEach((k) => params.delete(k));
                 params.set("page", "1");
                 setSearchParams(params);
               }}

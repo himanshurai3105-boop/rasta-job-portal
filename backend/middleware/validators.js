@@ -1,4 +1,5 @@
 import { body, param, query } from "express-validator";
+import { INDUSTRIES } from "../utils/industries.js";
 
 // ---------- Auth ----------
 export const registerValidator = [
@@ -75,6 +76,20 @@ export const updateMeValidator = [
     .isArray({ max: 3 })
     .withMessage("Preferred work modes must be a list"),
   body("preferredWorkModes.*").optional().isIn(["onsite", "remote", "hybrid"]),
+  body("preferredIndustries")
+    .optional()
+    .isArray({ max: 10 })
+    .withMessage("Preferred industries must be a list"),
+  body("preferredIndustries.*").optional().isIn(INDUSTRIES),
+  body("education").optional().isObject().withMessage("Education must be an object"),
+  body("education.tenth.percentage").optional({ checkFalsy: true }).isFloat({ min: 0, max: 100 }),
+  body("education.tenth.schoolName").optional({ checkFalsy: true }).trim().isLength({ max: 150 }),
+  body("education.tenth.board").optional({ checkFalsy: true }).trim().isLength({ max: 100 }),
+  body("education.tenth.yearOfPassing").optional({ checkFalsy: true }).isInt({ min: 1980, max: 2035 }),
+  body("education.twelfth.percentage").optional({ checkFalsy: true }).isFloat({ min: 0, max: 100 }),
+  body("education.twelfth.schoolName").optional({ checkFalsy: true }).trim().isLength({ max: 150 }),
+  body("education.twelfth.board").optional({ checkFalsy: true }).trim().isLength({ max: 100 }),
+  body("education.twelfth.yearOfPassing").optional({ checkFalsy: true }).isInt({ min: 1980, max: 2035 }),
   body("companyName").optional().trim().isLength({ max: 100 }),
   body("companyWebsite").optional().trim().isURL().withMessage("Enter a valid URL"),
   body("companyDescription").optional().trim().isLength({ max: 2000 }),
@@ -101,6 +116,7 @@ export const createJobValidator = [
   body("requirements.*").optional().trim().isLength({ max: 300 }),
   body("isFeatured").optional().isBoolean().toBoolean(),
   body("isUrgent").optional().isBoolean().toBoolean(),
+  body("category").optional({ checkFalsy: true }).isIn(INDUSTRIES).withMessage("Invalid industry/category"),
 ];
 
 export const updateJobValidator = [
@@ -110,19 +126,21 @@ export const updateJobValidator = [
   body("status").optional().isIn(["active", "closed", "pending_review"]),
   body("isFeatured").optional().isBoolean().toBoolean(),
   body("isUrgent").optional().isBoolean().toBoolean(),
+  body("category").optional({ checkFalsy: true }).isIn(INDUSTRIES).withMessage("Invalid industry/category"),
 ];
 
 export const jobIdValidator = [param("id").isMongoId().withMessage("Invalid job id")];
 
-  export const jobQueryValidator = [
-    query("page").optional({ values: "falsy" }).isInt({ min: 1 }).toInt(),
-    query("limit").optional({ values: "falsy" }).isInt({ min: 1, max: 50 }).toInt(),
-    query("keyword").optional({ values: "falsy" }).trim().isLength({ max: 100 }),
-    query("location").optional({ values: "falsy" }).trim().isLength({ max: 100 }),
-    query("salaryMin").optional({ values: "falsy" }).isFloat({ min: 0 }),
-    query("salaryMax").optional({ values: "falsy" }).isFloat({ min: 0 }),
-    query("skills").optional({ values: "falsy" }).trim().isLength({ max: 200 }),
-  ];
+export const jobQueryValidator = [
+  query("page").optional().isInt({ min: 1 }).toInt(),
+  query("limit").optional().isInt({ min: 1, max: 50 }).toInt(),
+  query("keyword").optional().trim().isLength({ max: 100 }),
+  query("location").optional().trim().isLength({ max: 100 }),
+  query("salaryMin").optional().isFloat({ min: 0 }),
+  query("salaryMax").optional().isFloat({ min: 0 }),
+  query("skills").optional().trim().isLength({ max: 200 }),
+  query("category").optional().trim().isLength({ max: 100 }),
+];
 
 // ---------- Applications ----------
 export const applyValidator = [

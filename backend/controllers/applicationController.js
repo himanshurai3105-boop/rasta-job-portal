@@ -53,35 +53,43 @@ export const applyToJob = asyncHandler(async (req, res) => {
 
   res.status(201).json({ success: true, data: application });
 
-  // Fire-and-forget — AI resume screening
-if (resumeText) {
-  try {
-    const result = await screenResume({
-      jobTitle: job.title,
-      jobDescription: job.description,
-      jobRequirements: job.skills || job.requirements || [],
-      resumeText,
+  // Fire-and-forget — notify + email employer about the new applicant
+  const employer = await User.findById(job.employer);
+  if (employer) {
+    notify({
+      user: employer._id,
+      type: "new_applicant",
+      title: "New applicant received",
+      message: `${req.user.name} applied to "${job.title}".`,
+      link: `/employer/jobs/${job._id}/applicants`,
     });
-
-    // Agar resume score 75 ya usse zyada hai toh candidate ko auto-shortlist karein
-    const isShortlisted = result.score >= 75;
-
-    await Application.findByIdAndUpdate(application._id, {
-      "aiScreening.score": result.score,
-      "aiScreening.summary": result.summary,
-      "aiScreening.strengths": result.strengths || [],
-      "aiScreening.gaps": result.gaps || [],
-      "aiScreening.status": "completed",
-      ...(isShortlisted ? { status: "shortlisted" } : {})
-    });
-
-  } catch (err) {
-    await Application.findByIdAndUpdate(application._id, {
-      "aiScreening.status": "failed",
-    });
-    console.error("AI screening failed:", err.message);
+    const template = emailTemplates.newApplicant(job.title, req.user.name);
+    sendEmail({ to: employer.email, ...template });
   }
-}
+
+  // Fire-and-forget — AI resume screening
+  if (resumeText) {
+    try {
+      const result = await screenResume({
+        jobTitle: job.title,
+        jobDescription: job.description,
+        jobRequirements: job.requirements,
+        resumeText,
+      });
+      await Application.findByIdAndUpdate(application._id, {
+        aiScreening: {
+          score: result.score,
+          summary: result.summary,
+          strengths: result.strengths || [],
+          gaps: result.gaps || [],
+          status: "completed",
+        },
+      });
+    } catch (err) {
+      await Application.findByIdAndUpdate(application._id, { "aiScreening.status": "failed" });
+      console.error("AI screening failed:", err.message);
+    }
+  }
 });
 
 // @desc    Get single application (for interview page / status checks)
@@ -405,90 +413,50 @@ export const reportInterviewViolation = asyncHandler(async (req, res) => {
 // @access  Private/Jobseeker (owner only)
 export const startMCQTest = asyncHandler(async (req, res) => {
   const application = await Application.findById(req.params.id).populate("job", "title description skills");
-
   if (!application) {
     res.status(404);
     throw new Error("Application not found");
   }
-
   if (application.applicant.toString() !== req.user._id.toString()) {
     res.status(403);
     throw new Error("Not authorized");
   }
-
-  // Agar already completed hai toh reject karein
-  if (application.mcqTest && ["completed", "failed_violation", "failed_timeout"].includes(application.mcqTest.status)) {
+  if (["completed", "failed_violation", "failed_timeout"].includes(application.mcqTest.status)) {
     res.status(400);
     throw new Error("This test has already ended and cannot be retaken.");
   }
 
-  // Agar test already in_progress hai aur questions bane huye hain, toh wahi return karein
-  if (application.mcqTest?.status === "in_progress" && application.mcqTest?.questions?.length > 0) {
+  if (application.mcqTest.status === "in_progress" && application.mcqTest.questions.length > 0) {
+    // Resume — return existing questions + remaining time
     const elapsedMs = Date.now() - new Date(application.mcqTest.startedAt).getTime();
-    const limitMs = (application.mcqTest.timeLimitMinutes || 15) * 60 * 1000;
-    const remainingSeconds = Math.max(0, Math.floor((limitMs - elapsedMs) / 1000));
-
+    const remainingMs = application.mcqTest.timeLimitMinutes * 60 * 1000 - elapsedMs;
     return res.json({
       success: true,
       data: {
-        questions: application.mcqTest.questions.map((q) => ({
-          question: q.question,
-          options: q.options,
-        })),
-        timeLimitMinutes: application.mcqTest.timeLimitMinutes || 15,
-        remainingSeconds,
+        questions: application.mcqTest.questions.map((q) => ({ question: q.question, options: q.options })),
+        timeLimitMinutes: application.mcqTest.timeLimitMinutes,
+        remainingSeconds: Math.max(0, Math.floor(remainingMs / 1000)),
       },
     });
   }
 
-  // Naye questions generate karein (aiService fallback mock de dega agar key nahi hai)
-  let generated = [];
-  try {
-    generated = await generateMCQTest({
-      jobTitle: application.job?.title || "Role",
-      jobDescription: application.job?.description || "",
-      skills: application.job?.skills || [],
-    });
-  } catch (err) {
-    console.error("AI Generation error fallback:", err.message);
-    // Hard fallback agar koi bhi error aaye
-    generated = [
-      {
-        question: "What is the primary role of Git in software development?",
-        options: ["Code version control", "Database hosting", "Styling websites", "Running tests automatically"],
-        correctIndex: 0
-      },
-      {
-        question: "Which HTTP status code indicates a successful resource creation?",
-        options: ["200", "201", "404", "500"],
-        correctIndex: 1
-      },
-      {
-        question: "Which of the following is used for client-side storage?",
-        options: ["localStorage", "Express Router", "Mongoose", "PostgreSQL"],
-        correctIndex: 0
-      }
-    ];
-  }
+  const generated = await generateMCQTest({
+    jobTitle: application.job.title,
+    jobDescription: application.job.description,
+    skills: application.job.skills,
+  });
 
-  application.mcqTest = {
-    questions: generated,
-    status: "in_progress",
-    startedAt: new Date(),
-    timeLimitMinutes: 15,
-  };
-
+  application.mcqTest.questions = generated;
+  application.mcqTest.status = "in_progress";
+  application.mcqTest.startedAt = new Date();
   await application.save();
 
   res.json({
     success: true,
     data: {
-      questions: generated.map((q) => ({
-        question: q.question,
-        options: q.options,
-      })),
-      timeLimitMinutes: 15,
-      remainingSeconds: 15 * 60,
+      questions: generated.map((q) => ({ question: q.question, options: q.options })),
+      timeLimitMinutes: application.mcqTest.timeLimitMinutes,
+      remainingSeconds: application.mcqTest.timeLimitMinutes * 60,
     },
   });
 });
@@ -533,54 +501,35 @@ export const submitMCQTest = asyncHandler(async (req, res) => {
   application.mcqTest.submittedAt = new Date();
   application.mcqTest.status = timedOut ? "failed_timeout" : "completed";
 
-// 80% passing rule (8/10 ya usse zyada)
-  const isPassed = !timedOut && score >= 8;
-
-  if (isPassed) {
-    application.status = "applied";
+  // Auto-shortlist candidates who score 8/10 or higher
+  if (!timedOut && score >= 8) {
     application.mcqTest.autoShortlisted = true;
-    await application.save();
-
-    // Employer notification
-    if (application.job) {
-      notify({
-        user: application.job.employer,
-        type: "status_update",
-        title: "Candidate passed assessment",
-        message: `A candidate scored ${score}/10 on the screening test for "${application.job.title}".`,
-        link: `/employer/jobs/${application.job._id}/applicants`,
-      });
+    if (application.status === "applied" || application.status === "interview") {
+      application.status = "shortlisted";
     }
+  }
 
-    return res.json({
-      success: true,
-      passed: true,
-      message: "Congratulations! Aapne test clear kar liya hai aur aapki application submit ho gayi hai.",
-      data: {
-        score,
-        total: application.mcqTest.questions.length,
-        status: application.status,
-        autoShortlisted: true,
-      },
-    });
-  } else {
-    // 8 se kam score hone par reject aur fail message
-    application.status = "rejected";
-    application.mcqTest.autoShortlisted = false;
-    await application.save();
+  await application.save();
 
-    return res.json({
-      success: false,
-      passed: false,
-      message: "Sorry, aap test clear nahi kar paye. Better luck next time!",
-      data: {
-        score,
-        total: application.mcqTest.questions.length,
-        status: "rejected",
-        autoShortlisted: false,
-      },
+  if (application.mcqTest.autoShortlisted) {
+    notify({
+      user: application.employer,
+      type: "status_update",
+      title: "Candidate auto-shortlisted",
+      message: `A candidate scored ${score}/10 on the screening test for "${application.job.title}" and was auto-shortlisted.`,
+      link: `/employer/jobs/${application.job._id}/applicants`,
     });
   }
+
+  res.json({
+    success: true,
+    data: {
+      score,
+      total: application.mcqTest.questions.length,
+      status: application.mcqTest.status,
+      autoShortlisted: application.mcqTest.autoShortlisted,
+    },
+  });
 });
 
 // @desc    Report a proctoring violation (tab switch) during the MCQ test — ends it immediately as failed

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { INDUSTRIES } from "../data/industries.js";
 
 export const emptyJobForm = {
   title: "",
@@ -11,6 +12,7 @@ export const emptyJobForm = {
   salaryMax: "",
   skills: "",
   requirements: "",
+  category: "",
   isFeatured: false,
   isUrgent: false,
 };
@@ -26,6 +28,7 @@ export const jobToFormValues = (job) => ({
   salaryMax: job.salaryMax || "",
   skills: (job.skills || []).join(", "),
   requirements: (job.requirements || []).join("\n"),
+  category: job.category && job.category !== "General" ? job.category : "",
   isFeatured: job.isFeatured || false,
   isUrgent: job.isUrgent || false,
 });
@@ -115,6 +118,16 @@ const JobForm = ({ initialValues, onSubmit, submitLabel, loadingLabel }) => {
             <label className="text-sm font-medium">Max salary (annual)</label>
             <input type="number" value={form.salaryMax} onChange={update("salaryMax")} className="w-full mt-1 px-4 py-3 rounded-xl border border-ink/10 focus-ring" />
           </div>
+        </div>
+        <div>
+          <label className="text-sm font-medium">Industry / category</label>
+          <select value={form.category} onChange={update("category")} className="w-full mt-1 px-4 py-3 rounded-xl border border-ink/10 focus-ring bg-white">
+            <option value="">Select an industry...</option>
+            {INDUSTRIES.map((ind) => (
+              <option key={ind} value={ind}>{ind}</option>
+            ))}
+          </select>
+          <p className="text-xs text-muted mt-1">Helps match this job to jobseekers with the same preference.</p>
         </div>
         <div>
           <label className="text-sm font-medium">Skills (comma separated)</label>

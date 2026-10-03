@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
     },
     password: { type: String, required: true, minlength: 6, select: false },
     phone: { type: String, default: "" },
+    profilePhotoUrl: { type: String, default: "" },
     role: {
       type: String,
       enum: ["jobseeker", "employer", "admin"],
@@ -26,6 +27,22 @@ const userSchema = new mongoose.Schema(
     location: { type: String, default: "" },
     savedJobs: [{ type: mongoose.Schema.Types.ObjectId, ref: "Job" }],
 
+    // Education
+    education: {
+      tenth: {
+        percentage: { type: Number, min: 0, max: 100 },
+        schoolName: { type: String, default: "" },
+        board: { type: String, default: "" },
+        yearOfPassing: { type: Number },
+      },
+      twelfth: {
+        percentage: { type: Number, min: 0, max: 100 },
+        schoolName: { type: String, default: "" },
+        board: { type: String, default: "" },
+        yearOfPassing: { type: Number },
+      },
+    },
+
     // Job seeking preferences
     desiredRole: { type: String, default: "" },
     preferredLocations: [{ type: String }],
@@ -33,6 +50,7 @@ const userSchema = new mongoose.Schema(
       { type: String, enum: ["full-time", "part-time", "contract", "internship"] },
     ],
     preferredWorkModes: [{ type: String, enum: ["onsite", "remote", "hybrid"] }],
+    preferredIndustries: [{ type: String }],
 
     // Employer fields
     companyName: { type: String, default: "" },

@@ -5,12 +5,8 @@ import api from "../api/axios.js";
 const MCQTest = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-
   const [questions, setQuestions] = useState([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState(null);
   const [answers, setAnswers] = useState([]);
-
   const [remainingSeconds, setRemainingSeconds] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -21,65 +17,14 @@ const MCQTest = () => {
   const submittedRef = useRef(false);
   const timerRef = useRef(null);
 
-  // 1. Initial Load: Start MCQ & Load Questions
-  useEffect(() => {
-    api
-      .post(`/applications/${id}/mcq/start`)
-      .then((res) => {
-        const qList = res.data?.data?.questions || [];
-        setQuestions(qList);
-        setRemainingSeconds(res.data?.data?.remainingSeconds || 15 * 60);
-      })
-      .catch((err) => {
-        setError(err.response?.data?.message || "Could not start the test");
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
-
-  // 2. Anti-Cheating: Tab Switch & Window Blur Auto-Fail
-  useEffect(() => {
-    if (result || loading || violated) return;
-
-    const handleViolation = async () => {
-      if (submittedRef.current) return;
-      submittedRef.current = true;
-      setViolated(true);
-      clearInterval(timerRef.current);
-
-      try {
-        await api.post(`/applications/${id}/mcq/violation`);
-      } catch (e) {
-        console.error("Violation reporting failed:", e);
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        handleViolation();
-      }
-    };
-
-    window.addEventListener("blur", handleViolation);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("blur", handleViolation);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [id, result, loading, violated]);
-
-  // 3. Final Submission Function
-  const submitFinalTest = async (finalAnswers) => {
+  const submitTest = async () => {
     if (submittedRef.current) return;
     submittedRef.current = true;
     setSubmitting(true);
     clearInterval(timerRef.current);
-
     try {
-      const res = await api.post(`/applications/${id}/mcq/submit`, {
-        answers: finalAnswers,
-      });
-      setResult(res.data);
+      const res = await api.post(`/applications/${id}/mcq/submit`, { answers });
+      setResult(res.data.data);
     } catch (err) {
       setError(err.response?.data?.message || "Could not submit the test");
     } finally {
@@ -87,40 +32,55 @@ const MCQTest = () => {
     }
   };
 
-  // 4. Timer Handling
+  useEffect(() => {
+    api
+      .post(`/applications/${id}/mcq/start`)
+      .then((res) => {
+        setQuestions(res.data.data.questions);
+        setAnswers(new Array(res.data.data.questions.length).fill(-1));
+        setRemainingSeconds(res.data.data.remainingSeconds);
+      })
+      .catch((err) => setError(err.response?.data?.message || "Could not start the test"))
+      .finally(() => setLoading(false));
+  }, [id]);
+
   useEffect(() => {
     if (remainingSeconds === null || result || violated) return;
-
     if (remainingSeconds <= 0) {
-      submitFinalTest(answers);
+      submitTest();
       return;
     }
-
-    timerRef.current = setTimeout(() => {
-      setRemainingSeconds((prev) => prev - 1);
-    }, 1000);
-
+    timerRef.current = setTimeout(() => setRemainingSeconds((s) => s - 1), 1000);
     return () => clearTimeout(timerRef.current);
-  }, [remainingSeconds, result, violated, answers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingSeconds, result, violated]);
 
-  // 5. One-by-One Question Next/Submit Handler
-  const handleNextOrSubmit = () => {
-    if (selectedOption === null) {
-      alert("Kripya aage badhne se pehle koi ek vikalp (option) select karein.");
-      return;
-    }
+  useEffect(() => {
+    if (result || loading) return;
 
-    const updatedAnswers = [...answers, selectedOption];
-    setAnswers(updatedAnswers);
-    setSelectedOption(null);
+    const handleVisibilityChange = async () => {
+      if (document.hidden && !submittedRef.current) {
+        submittedRef.current = true;
+        clearInterval(timerRef.current);
+        setViolated(true);
+        try {
+          await api.post(`/applications/${id}/mcq/violation`);
+        } catch {
+          // best-effort
+        }
+      }
+    };
 
-    // Agar aakhiri question hai toh submit karein
-    if (currentQuestionIndex + 1 >= questions.length) {
-      submitFinalTest(updatedAnswers);
-    } else {
-      // Agle question par jayein
-      setCurrentQuestionIndex((prev) => prev + 1);
-    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [id, result, loading]);
+
+  const selectAnswer = (qIndex, optIndex) => {
+    setAnswers((prev) => {
+      const next = [...prev];
+      next[qIndex] = optIndex;
+      return next;
+    });
   };
 
   const formatTime = (s) => {
@@ -129,185 +89,134 @@ const MCQTest = () => {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  // Loading Skeleton
   if (loading) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
-        <div className="h-8 bg-gray-200 rounded animate-pulse w-1/2 mb-4"></div>
-        <div className="h-48 bg-gray-100 rounded-xl animate-pulse"></div>
+        <div className="skeleton h-8 w-1/2 rounded-md" />
+        <div className="skeleton h-96 w-full rounded-2xl mt-6" />
       </div>
     );
   }
 
-  // Cheating / Violation Screen
   if (violated) {
     return (
       <div className="max-w-lg mx-auto px-6 py-16 text-center">
-        <div className="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-2xl font-bold">
+        <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-2xl">
           ✕
         </div>
-        <h1 className="text-2xl font-bold mt-6 text-red-600">Test Disqualified!</h1>
-        <p className="text-gray-600 mt-3">
-          Cheating aur tab-switch proctoring rule ke mutabiq aapka test turant disqualify kar diya gaya hai.
+        <h1 className="font-display text-2xl mt-6">Test ended</h1>
+        <p className="text-muted mt-3">
+          Switching tabs or windows during the test isn't allowed — this attempt has been marked as failed
+          and can't be retaken.
         </p>
         <button
-          onClick={() => navigate("/jobs")}
-          className="mt-6 px-6 py-2.5 rounded-lg bg-black text-white hover:bg-gray-800 transition"
+          onClick={() => navigate("/applications")}
+          className="mt-6 px-5 py-2.5 rounded-lg bg-ink text-paper text-sm font-medium hover:bg-amber-dark transition-colors focus-ring"
         >
-          Back to Jobs
+          Back to my applications
         </button>
       </div>
     );
   }
 
-  // Error Screen
   if (error && questions.length === 0) {
     return (
-      <div className="max-w-lg mx-auto px-6 py-16 text-center text-red-600">
-        <p className="font-medium">{error}</p>
-        <button
-          onClick={() => navigate("/jobs")}
-          className="mt-4 px-5 py-2 rounded bg-gray-200 text-gray-800"
-        >
-          Go Back
-        </button>
+      <div className="max-w-lg mx-auto px-6 py-16 text-center text-muted">
+        {error}
       </div>
     );
   }
 
-  // Result Screen (80% Pass / Fail)
   if (result) {
-    const passed = result.passed || (result.data && result.data.score >= 8);
-    const score = result.data?.score ?? 0;
-    const total = result.data?.total ?? questions.length;
-
+    const passed = result.score >= 8 && result.status === "completed";
     return (
-      <div className="max-w-lg mx-auto px-6 py-16 text-center bg-white shadow rounded-2xl mt-10">
+      <div className="max-w-lg mx-auto px-6 py-16 text-center">
         <div
-          className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto text-2xl font-bold ${
-            passed ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+          className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto text-2xl ${
+            passed ? "bg-success/10 text-success" : "bg-ink/5 text-ink/50"
           }`}
         >
-          {passed ? "✓" : "✕"}
+          {passed ? "✓" : result.score}
         </div>
-
-        <h1 className="text-3xl font-bold mt-6">
-          Score: {score} / {total}
+        <h1 className="font-display text-3xl mt-6">
+          {result.score} / {result.total}
         </h1>
-
-        {passed ? (
-          <div className="mt-4">
-            <p className="text-green-600 font-semibold text-lg">
-              Congratulations! Aapne test clear kar liya hai.
-            </p>
-            <p className="text-gray-500 text-sm mt-1">
-              Aapki application successfully submit ho chuki hai.
-            </p>
-          </div>
+        {result.status === "failed_timeout" ? (
+          <p className="text-muted mt-3">Time ran out before you submitted — this attempt was auto-submitted.</p>
+        ) : passed ? (
+          <p className="text-success mt-3">
+            Great score! You've been automatically shortlisted — the employer can now see your application.
+          </p>
         ) : (
-          <div className="mt-4">
-            <p className="text-red-500 font-semibold text-lg">
-              Sorry, aap test clear nahi kar paye.
-            </p>
-            <p className="text-gray-500 text-sm mt-1">
-              Test clear karne ke liye kam se kam 80% (8/10) sahi hone zaroori the. Better luck next time!
-            </p>
-          </div>
+          <p className="text-muted mt-3">Thanks for taking the test — the employer will review your application.</p>
         )}
-
         <button
-          onClick={() => navigate(passed ? "/my-applications" : "/jobs")}
-          className="mt-8 px-6 py-2.5 rounded-lg bg-black text-white hover:bg-gray-800 transition"
+          onClick={() => navigate("/applications")}
+          className="mt-6 px-5 py-2.5 rounded-lg bg-ink text-paper text-sm font-medium hover:bg-amber-dark transition-colors focus-ring"
         >
-          {passed ? "View My Applications" : "Explore Other Jobs"}
+          Back to my applications
         </button>
       </div>
     );
   }
 
-  // Active Test UI (1 Question at a time)
-  const currentQ = questions[currentQuestionIndex];
+  const answeredCount = answers.filter((a) => a !== -1).length;
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
-      {/* Top Bar: Progress & Live Timer */}
-      <div className="flex items-center justify-between sticky top-4 bg-white/90 backdrop-blur p-4 rounded-xl border shadow-sm z-10">
+    <div className="max-w-2xl mx-auto px-6 py-8 md:py-12">
+      <div className="flex items-center justify-between sticky top-16 bg-paper/95 backdrop-blur py-3 z-10 -mx-6 px-6 border-b border-ink/10">
         <div>
-          <span className="text-xs uppercase tracking-wider text-gray-500 font-bold">
-            Assessment Test
-          </span>
-          <p className="text-sm font-semibold text-gray-800">
-            Question {currentQuestionIndex + 1} of {questions.length}
-          </p>
+          <p className="font-mono text-xs uppercase tracking-widest text-amber-dark">Screening Test</p>
+          <p className="text-sm text-muted mt-0.5">{answeredCount} / {questions.length} answered</p>
         </div>
-
         <div
-          className={`font-mono text-sm px-3 py-1.5 rounded-lg font-bold ${
-            remainingSeconds < 60 ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-800"
+          className={`font-mono text-lg font-semibold px-3 py-1.5 rounded-lg ${
+            remainingSeconds <= 60 ? "bg-red-50 text-red-600" : "bg-ink/5 text-ink"
           }`}
         >
-          ⏳ {formatTime(remainingSeconds || 0)}
+          {formatTime(remainingSeconds)}
         </div>
       </div>
 
-      {/* Proctoring Warning Box */}
-      <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
-        <span>⚠️</span>
-        <span>
-          <strong>Proctoring Active:</strong> Doosra tab kholne ya window change karne par test turant fail ho jayega.
-        </span>
+      <div className="mt-4 p-3 rounded-xl bg-amber/10 text-amber-dark text-xs">
+        Stay on this tab until you submit — switching away will immediately end the test.
       </div>
 
-      {/* Question Card */}
-      {currentQ && (
-        <div className="mt-6 p-6 rounded-2xl bg-white border shadow-sm">
-          <p className="text-base font-semibold text-gray-900 mb-5 leading-relaxed">
-            {currentQuestionIndex + 1}. {currentQ.question}
-          </p>
-
-          <div className="space-y-3">
-            {currentQ.options.map((opt, optIndex) => {
-              const isSelected = selectedOption === optIndex;
-              return (
+      <div className="mt-6 space-y-6">
+        {questions.map((q, qi) => (
+          <div key={qi} className="p-5 rounded-2xl bg-white border border-ink/10">
+            <p className="font-medium">
+              {qi + 1}. {q.question}
+            </p>
+            <div className="mt-3 space-y-2">
+              {q.options.map((opt, oi) => (
                 <button
-                  key={optIndex}
+                  key={oi}
                   type="button"
-                  onClick={() => setSelectedOption(optIndex)}
-                  className={`w-full text-left p-4 rounded-xl border text-sm font-medium transition-all ${
-                    isSelected
-                      ? "border-blue-600 bg-blue-50 text-blue-900 shadow-sm"
-                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700"
+                  onClick={() => selectAnswer(qi, oi)}
+                  className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm transition-colors focus-ring ${
+                    answers[qi] === oi
+                      ? "border-amber bg-amber/10 font-medium"
+                      : "border-ink/10 hover:border-ink/30"
                   }`}
                 >
-                  <span className="inline-block w-6 font-bold text-gray-400">
-                    {String.fromCharCode(65 + optIndex)}.
-                  </span>
                   {opt}
                 </button>
-              );
-            })}
+              ))}
+            </div>
           </div>
+        ))}
+      </div>
 
-          {error && <p className="text-red-500 text-xs mt-4">{error}</p>}
+      {error && <p className="text-red-600 text-sm mt-4">{error}</p>}
 
-          {/* Action Button */}
-          <button
-            onClick={handleNextOrSubmit}
-            disabled={submitting || selectedOption === null}
-            className={`w-full mt-6 py-3 rounded-xl font-medium text-white transition shadow ${
-              selectedOption === null || submitting
-                ? "bg-gray-300 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700"
-            }`}
-          >
-            {submitting
-              ? "Submitting..."
-              : currentQuestionIndex + 1 === questions.length
-              ? "Submit Test"
-              : "Next Question →"}
-          </button>
-        </div>
-      )}
+      <button
+        onClick={submitTest}
+        disabled={submitting}
+        className="w-full mt-6 py-3 rounded-xl bg-ink text-paper font-medium hover:bg-amber-dark transition-colors focus-ring disabled:opacity-50"
+      >
+        {submitting ? "Submitting..." : "Submit test"}
+      </button>
     </div>
   );
 };

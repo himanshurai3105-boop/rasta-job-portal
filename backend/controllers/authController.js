@@ -111,10 +111,12 @@ export const updateMe = asyncHandler(async (req, res) => {
     "resumeUrl",
     "experienceYears",
     "location",
+    "education",
     "desiredRole",
     "preferredLocations",
     "preferredJobTypes",
     "preferredWorkModes",
+    "preferredIndustries",
     "companyName",
     "companyLogoUrl",
     "companyWebsite",
@@ -169,6 +171,25 @@ export const uploadProfileResume = asyncHandler(async (req, res) => {
 // @desc    Request a password reset email
 // @route   POST /api/auth/forgot-password
 // @access  Public
+// @desc    Upload/replace profile photo
+// @route   POST /api/auth/me/photo
+// @access  Private
+export const uploadProfilePhoto = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.status(400);
+    throw new Error("No file uploaded");
+  }
+
+  const profilePhotoUrl = `/uploads/photos/${req.file.filename}`;
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    { profilePhotoUrl },
+    { new: true }
+  );
+
+  res.json({ success: true, data: user });
+});
+
 export const forgotPassword = asyncHandler(async (req, res) => {
   const email = (req.body.email || "").trim().toLowerCase();
   const user = await User.findOne({ email });

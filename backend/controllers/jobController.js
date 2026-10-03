@@ -195,16 +195,27 @@ export const getSavedJobs = asyncHandler(async (req, res) => {
 export const getRecommendedJobs = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
 
-  if (!user.skills || user.skills.length === 0) {
-    return res.json({ success: true, data: [], message: "Add skills to your profile to get recommendations." });
+  const hasSkills = user.skills && user.skills.length > 0;
+  const hasIndustries = user.preferredIndustries && user.preferredIndustries.length > 0;
+
+  if (!hasSkills && !hasIndustries) {
+    return res.json({
+      success: true,
+      data: [],
+      message: "Add skills or preferred industries to your profile to get recommendations.",
+    });
   }
 
-  const skillPatterns = user.skills.map((s) => new RegExp(s, "i"));
+  const candidateQuery = { status: "active", $or: [] };
+  if (hasSkills) {
+    const skillPatterns = user.skills.map((s) => new RegExp(s, "i"));
+    candidateQuery.$or.push({ skills: { $in: skillPatterns } });
+  }
+  if (hasIndustries) {
+    candidateQuery.$or.push({ category: { $in: user.preferredIndustries } });
+  }
 
-  const candidates = await Job.find({
-    status: "active",
-    skills: { $in: skillPatterns },
-  })
+  const candidates = await Job.find(candidateQuery)
     .populate("employer", "companyName companyLogoUrl")
     .limit(150); // cap the candidate pool before scoring
 
@@ -212,11 +223,13 @@ export const getRecommendedJobs = asyncHandler(async (req, res) => {
 
   const scored = candidates
     .map((job) => {
-      let score = job.skills.filter((skill) =>
-        user.skills.some((us) => us.toLowerCase() === skill.toLowerCase())
-      ).length;
+      let score = hasSkills
+        ? job.skills.filter((skill) => user.skills.some((us) => us.toLowerCase() === skill.toLowerCase())).length
+        : 0;
 
-      // Boost for matching job preferences — skills remain the primary signal
+      if (hasIndustries && user.preferredIndustries.includes(job.category)) {
+        score += 3;
+      }
       if (user.desiredRole && job.title.toLowerCase().includes(user.desiredRole.toLowerCase())) {
         score += 2;
       }

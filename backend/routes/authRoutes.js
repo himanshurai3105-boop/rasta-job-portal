@@ -5,6 +5,7 @@ import {
   getMe,
   updateMe,
   uploadProfileResume,
+  uploadProfilePhoto,
   forgotPassword,
   resetPassword,
 } from "../controllers/authController.js";
@@ -19,6 +20,7 @@ import {
   resetPasswordValidator,
 } from "../middleware/validators.js";
 import uploadResume from "../middleware/uploadResume.js";
+import uploadPhoto from "../middleware/uploadPhoto.js";
 
 const router = express.Router();
 
@@ -35,5 +37,6 @@ router.post(
   uploadResume.single("resume"),
   uploadProfileResume
 );
+router.post("/me/photo", protect, uploadPhoto.single("photo"), uploadProfilePhoto);
 
 export default router;
