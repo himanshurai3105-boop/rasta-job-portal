@@ -57,6 +57,7 @@ router.post("/:id/interview/start", protect, authorize("jobseeker"), mongoIdPara
 router.post("/:id/interview/answer", protect, authorize("jobseeker"), mongoIdParamValidator, validate, submitInterviewAnswer);
 router.post("/:id/interview/violation", protect, authorize("jobseeker"), mongoIdParamValidator, validate, reportInterviewViolation);
 
+// MCQ test routes — protect zaroori hai taaki req.user set ho
 router.post("/:id/mcq/start", protect, authorize("jobseeker"), mongoIdParamValidator, validate, startMCQTest);
 router.post("/:id/mcq/submit", protect, authorize("jobseeker"), mongoIdParamValidator, validate, submitMCQTest);
 router.post("/:id/mcq/violation", protect, authorize("jobseeker"), mongoIdParamValidator, validate, reportMCQViolation);

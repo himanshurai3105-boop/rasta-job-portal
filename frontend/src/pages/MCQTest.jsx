@@ -1,221 +1,257 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../api/axios.js";
 
 const MCQTest = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState([]);
-  const [remainingSeconds, setRemainingSeconds] = useState(null);
+
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [questions, setQuestions] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [timeLeft, setTimeLeft] = useState(600); // 10 minutes
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState(null);
-  const [violated, setViolated] = useState(false);
+  const [violationOccurred, setViolationOccurred] = useState(false);
 
-  const submittedRef = useRef(false);
-  const timerRef = useRef(null);
-
-  const submitTest = async () => {
-    if (submittedRef.current) return;
-    submittedRef.current = true;
-    setSubmitting(true);
-    clearInterval(timerRef.current);
-    try {
-      const res = await api.post(`/applications/${id}/mcq/submit`, { answers });
-      setResult(res.data.data);
-    } catch (err) {
-      setError(err.response?.data?.message || "Could not submit the test");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
+  // 1. Fetch Questions on Mount
   useEffect(() => {
-    api
-      .post(`/applications/${id}/mcq/start`)
-      .then((res) => {
-        setQuestions(res.data.data.questions);
-        setAnswers(new Array(res.data.data.questions.length).fill(-1));
-        setRemainingSeconds(res.data.data.remainingSeconds);
-      })
-      .catch((err) => setError(err.response?.data?.message || "Could not start the test"))
-      .finally(() => setLoading(false));
-  }, [id]);
+    let isMounted = true;
 
-  useEffect(() => {
-    if (remainingSeconds === null || result || violated) return;
-    if (remainingSeconds <= 0) {
-      submitTest();
-      return;
-    }
-    timerRef.current = setTimeout(() => setRemainingSeconds((s) => s - 1), 1000);
-    return () => clearTimeout(timerRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remainingSeconds, result, violated]);
+    const fetchTest = async () => {
+      try {
+        const res = await api.post(`/applications/${id}/mcq/start`, {});
 
-  useEffect(() => {
-    if (result || loading) return;
-
-    const handleVisibilityChange = async () => {
-      if (document.hidden && !submittedRef.current) {
-        submittedRef.current = true;
-        clearInterval(timerRef.current);
-        setViolated(true);
-        try {
-          await api.post(`/applications/${id}/mcq/violation`);
-        } catch {
-          // best-effort
+        if (!isMounted) return;
+        const testData = res.data?.data || res.data || {};
+        setQuestions(testData.questions || []);
+        setJobTitle(testData.jobTitle || "Role Assessment");
+        if (typeof testData.remainingSeconds === "number") {
+          setTimeLeft(testData.remainingSeconds);
         }
+        setLoading(false);
+      } catch (err) {
+        console.error("Test start error:", err);
+        if (!isMounted) return;
+        alert(err.response?.data?.message || err.message || "Failed to load test questions.");
+        navigate("/my-applications");
       }
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [id, result, loading]);
+    fetchTest();
+    return () => {
+      isMounted = false;
+    };
+  }, [id, navigate]);
 
-  const selectAnswer = (qIndex, optIndex) => {
-    setAnswers((prev) => {
-      const next = [...prev];
-      next[qIndex] = optIndex;
-      return next;
-    });
+  // 2. Strict Anti-Cheating (Tab switch / Window blur hone par instant reject)
+  useEffect(() => {
+    if (loading || isSubmitting || result || violationOccurred) return;
+
+    const triggerViolation = async (reason) => {
+      setViolationOccurred(true);
+      setIsSubmitting(true);
+      try {
+        await api.post(`/applications/${id}/mcq/violation`, {});
+      } catch (err) {
+        console.error("Violation send error:", err);
+      } finally {
+        setResult({
+          passed: false,
+          testPassed: false,
+          status: "rejected",
+          message: reason,
+        });
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        triggerViolation("Disqualified: Browser tab ya doosri window open ki gayi. Test disqualify kar diya gaya hai.");
+      }
+    };
+
+    const handleBlur = () => {
+      triggerViolation("Disqualified: Test window se focus hat gaya. Rule violation ke chalte test reject ho gaya.");
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [loading, isSubmitting, result, violationOccurred, id]);
+
+  // 3. Countdown Timer
+  useEffect(() => {
+    if (loading || isSubmitting || result) return;
+
+    if (timeLeft <= 0) {
+      handleFinalSubmit();
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [timeLeft, loading, isSubmitting, result]);
+
+  // 4. Submit Answers
+  const handleFinalSubmit = async (finalAnswers = selectedAnswers) => {
+    setIsSubmitting(true);
+    try {
+      const answersArray = questions.map((_, idx) =>
+        finalAnswers[idx] !== undefined ? finalAnswers[idx] : -1
+      );
+
+      const res = await api.post(`/applications/${id}/mcq/submit`, {
+        answers: answersArray,
+      });
+
+      const submitData = res.data?.data || res.data || {};
+      setResult(submitData);
+    } catch (err) {
+      alert("Submission error: " + (err.response?.data?.message || err.message));
+      setIsSubmitting(false);
+    }
   };
 
-  const formatTime = (s) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, "0")}`;
+  const handleNext = () => {
+    if (selectedAnswers[currentIndex] === undefined) {
+      alert("Kripya agla question dekhne se pehle koi ek option select karein.");
+      return;
+    }
+
+    if (currentIndex + 1 < questions.length) {
+      setCurrentIndex((prev) => prev + 1);
+    } else {
+      handleFinalSubmit();
+    }
   };
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        <div className="skeleton h-8 w-1/2 rounded-md" />
-        <div className="skeleton h-96 w-full rounded-2xl mt-6" />
+      <div className="flex justify-center items-center h-screen bg-gray-50">
+        <div className="text-xl font-semibold text-gray-700">Loading Job Assessment Test...</div>
       </div>
     );
   }
 
-  if (violated) {
-    return (
-      <div className="max-w-lg mx-auto px-6 py-16 text-center">
-        <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-2xl">
-          ✕
-        </div>
-        <h1 className="font-display text-2xl mt-6">Test ended</h1>
-        <p className="text-muted mt-3">
-          Switching tabs or windows during the test isn't allowed — this attempt has been marked as failed
-          and can't be retaken.
-        </p>
-        <button
-          onClick={() => navigate("/applications")}
-          className="mt-6 px-5 py-2.5 rounded-lg bg-ink text-paper text-sm font-medium hover:bg-amber-dark transition-colors focus-ring"
-        >
-          Back to my applications
-        </button>
-      </div>
-    );
-  }
-
-  if (error && questions.length === 0) {
-    return (
-      <div className="max-w-lg mx-auto px-6 py-16 text-center text-muted">
-        {error}
-      </div>
-    );
-  }
-
+  // Result Screen
   if (result) {
-    const passed = result.score >= 8 && result.status === "completed";
     return (
-      <div className="max-w-lg mx-auto px-6 py-16 text-center">
+      <div className="max-w-xl mx-auto my-16 p-8 bg-white rounded-2xl shadow-xl border text-center font-sans">
+        <h2 className="text-3xl font-extrabold text-gray-900 mb-4">Assessment Result</h2>
+
+        {result.score !== undefined && (
+          <div className="my-6 p-4 bg-gray-50 rounded-xl space-y-2">
+            <p className="text-gray-600 font-medium">
+              Test Score:{" "}
+              <span className={`text-2xl font-bold ${result.testPassed ? "text-green-600" : "text-red-600"}`}>
+                {result.score} / {result.total || questions.length} ({result.score * 10}%)
+              </span>
+            </p>
+            {result.resumeScore !== undefined && result.resumeScore !== null && (
+              <p className="text-gray-600 font-medium">
+                AI Resume Match: <span className="text-2xl font-bold text-blue-600">{result.resumeScore}%</span>
+              </p>
+            )}
+          </div>
+        )}
+
         <div
-          className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto text-2xl ${
-            passed ? "bg-success/10 text-success" : "bg-ink/5 text-ink/50"
+          className={`p-4 rounded-xl font-bold text-lg mb-6 ${
+            result.testPassed || result.autoShortlisted
+              ? "bg-green-100 text-green-800"
+              : result.status === "applied"
+              ? "bg-yellow-100 text-yellow-800"
+              : "bg-red-100 text-red-800"
           }`}
         >
-          {passed ? "✓" : result.score}
+          {result.message || (result.testPassed ? "Test qualified!" : "Sorry, you can't qualify the test.")}
         </div>
-        <h1 className="font-display text-3xl mt-6">
-          {result.score} / {result.total}
-        </h1>
-        {result.status === "failed_timeout" ? (
-          <p className="text-muted mt-3">Time ran out before you submitted — this attempt was auto-submitted.</p>
-        ) : passed ? (
-          <p className="text-success mt-3">
-            Great score! You've been automatically shortlisted — the employer can now see your application.
-          </p>
-        ) : (
-          <p className="text-muted mt-3">Thanks for taking the test — the employer will review your application.</p>
-        )}
+
         <button
-          onClick={() => navigate("/applications")}
-          className="mt-6 px-5 py-2.5 rounded-lg bg-ink text-paper text-sm font-medium hover:bg-amber-dark transition-colors focus-ring"
+          onClick={() => navigate("/my-applications")}
+          className="px-6 py-2.5 bg-gray-900 text-white font-semibold rounded-lg hover:bg-black transition"
         >
-          Back to my applications
+          Go to My Applications
         </button>
       </div>
     );
   }
 
-  const answeredCount = answers.filter((a) => a !== -1).length;
+  const currentQ = questions[currentIndex];
+  const minutes = Math.floor(timeLeft / 60);
+  const seconds = timeLeft % 60;
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8 md:py-12">
-      <div className="flex items-center justify-between sticky top-16 bg-paper/95 backdrop-blur py-3 z-10 -mx-6 px-6 border-b border-ink/10">
+    <div className="max-w-2xl mx-auto my-10 p-6 bg-white rounded-2xl shadow-lg border border-gray-100 font-sans">
+      {/* Header */}
+      <div className="flex justify-between items-center border-b pb-4 mb-6">
         <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-amber-dark">Screening Test</p>
-          <p className="text-sm text-muted mt-0.5">{answeredCount} / {questions.length} answered</p>
+          <span className="text-xs uppercase font-bold text-indigo-600 tracking-wider">Role Assessment</span>
+          <h2 className="text-xl font-bold text-gray-800">{jobTitle}</h2>
+          <span className="text-xs text-gray-500">
+            Question {currentIndex + 1} of {questions.length}
+          </span>
         </div>
-        <div
-          className={`font-mono text-lg font-semibold px-3 py-1.5 rounded-lg ${
-            remainingSeconds <= 60 ? "bg-red-50 text-red-600" : "bg-ink/5 text-ink"
-          }`}
-        >
-          {formatTime(remainingSeconds)}
+        <div className="text-right">
+          <span className="text-xs text-gray-400 uppercase font-semibold block">Time Left</span>
+          <span className={`text-2xl font-black ${timeLeft < 120 ? "text-red-600 animate-pulse" : "text-gray-800"}`}>
+            {minutes}:{seconds < 10 ? `0${seconds}` : seconds}
+          </span>
         </div>
       </div>
 
-      <div className="mt-4 p-3 rounded-xl bg-amber/10 text-amber-dark text-xs">
-        Stay on this tab until you submit — switching away will immediately end the test.
+      {/* Proctoring Warning */}
+      <div className="mb-6 p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg text-center font-medium">
+        ⚠️ Warning: Do not switch tabs, minimize, or click outside the window. Any focus loss will instantly fail the test.
       </div>
 
-      <div className="mt-6 space-y-6">
-        {questions.map((q, qi) => (
-          <div key={qi} className="p-5 rounded-2xl bg-white border border-ink/10">
-            <p className="font-medium">
-              {qi + 1}. {q.question}
-            </p>
-            <div className="mt-3 space-y-2">
-              {q.options.map((opt, oi) => (
-                <button
-                  key={oi}
-                  type="button"
-                  onClick={() => selectAnswer(qi, oi)}
-                  className={`w-full text-left px-4 py-2.5 rounded-xl border text-sm transition-colors focus-ring ${
-                    answers[qi] === oi
-                      ? "border-amber bg-amber/10 font-medium"
-                      : "border-ink/10 hover:border-ink/30"
-                  }`}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Question */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 leading-snug">
+          {currentIndex + 1}. {currentQ?.question}
+        </h3>
+      </div>
+
+      {/* Options */}
+      <div className="space-y-3 mb-8">
+        {currentQ?.options?.map((opt, idx) => (
+          <label
+            key={idx}
+            className={`flex items-center p-4 border rounded-xl cursor-pointer transition ${
+              selectedAnswers[currentIndex] === idx
+                ? "border-indigo-600 bg-indigo-50 shadow-sm"
+                : "border-gray-200 hover:bg-gray-50"
+            }`}
+          >
+            <input
+              type="radio"
+              name={`question_${currentIndex}`}
+              checked={selectedAnswers[currentIndex] === idx}
+              onChange={() => setSelectedAnswers({ ...selectedAnswers, [currentIndex]: idx })}
+              className="w-4 h-4 text-indigo-600 mr-3"
+            />
+            <span className="text-gray-800 font-medium text-sm">{opt}</span>
+          </label>
         ))}
       </div>
 
-      {error && <p className="text-red-600 text-sm mt-4">{error}</p>}
-
+      {/* Action Button */}
       <button
-        onClick={submitTest}
-        disabled={submitting}
-        className="w-full mt-6 py-3 rounded-xl bg-ink text-paper font-medium hover:bg-amber-dark transition-colors focus-ring disabled:opacity-50"
+        onClick={handleNext}
+        disabled={isSubmitting}
+        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl shadow-md transition disabled:bg-gray-400"
       >
-        {submitting ? "Submitting..." : "Submit test"}
+        {currentIndex + 1 === questions.length ? "Submit Final Assessment" : "Save & Next Question"}
       </button>
     </div>
   );
