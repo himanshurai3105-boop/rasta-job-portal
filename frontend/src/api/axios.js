@@ -4,9 +4,18 @@ import axios from "axios";
 // In production, set VITE_API_URL to your deployed backend's URL (see .env.example).
 const API_URL = import.meta.env.VITE_API_URL || "";
 
-// The backend's origin without "/api" — used to build full links to uploaded
-// files (resumes) which are served from the backend, not the frontend.
+// The backend's origin without "/api" — purane uploaded files (/uploads/...)
+// ke full links banane ke liye.
 export const SERVER_ORIGIN = API_URL.replace(/\/api\/?$/, "");
+
+// Resume / photo ka sahi link banata hai:
+// - Cloudinary ka poora https link jaisa hai waisa rahega
+// - purana "/uploads/..." link server ke address ke saath judega
+export const fileUrl = (path) => {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${SERVER_ORIGIN}${path}`;
+};
 
 const api = axios.create({
   baseURL: API_URL ? `${API_URL}` : "/api",

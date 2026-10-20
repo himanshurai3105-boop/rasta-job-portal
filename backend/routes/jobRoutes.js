@@ -14,6 +14,7 @@ import {
   getSalaryInsights,
   getFeaturedJobs,
 } from "../controllers/jobController.js";
+import { getJobFit } from "../controllers/jobFitController.js";
 import { protect, authorize } from "../middleware/auth.js";
 import { writeLimiter } from "../middleware/rateLimiter.js";
 import { validate } from "../middleware/validate.js";
@@ -37,6 +38,7 @@ router.get("/recommended/mine", protect, authorize("jobseeker"), getRecommendedJ
 router.get("/company/:employerId", getCompanyProfile);
 router.post("/", protect, authorize("employer"), writeLimiter, createJobValidator, validate, createJob);
 router.post("/:id/save", protect, authorize("jobseeker"), jobIdValidator, validate, toggleSaveJob);
+router.post("/:id/fit", protect, authorize("jobseeker"), writeLimiter, jobIdValidator, validate, getJobFit);
 router.put(
   "/:id",
   protect,

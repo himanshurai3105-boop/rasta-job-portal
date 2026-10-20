@@ -2,11 +2,19 @@ import React, { useState } from "react";
 import AutocompleteInput from "./AutocompleteInput.jsx";
 
 /**
- * Multi-value tag input with autocomplete. User types, picks a suggestion (or
- * presses Enter), it becomes a removable chip. Backed by the same
- * AutocompleteInput used for location/keyword search.
+ * Multi-value tag input with autocomplete. User type karta hai, suggestion chunta hai
+ * (ya Enter dabata hai), aur wo hata sakne wala chip ban jaata hai.
  */
-const TagAutocompleteInput = ({ values, onChange, fetchOptions, options, placeholder }) => {
+const TagAutocompleteInput = ({
+  values,
+  onChange,
+  fetchOptions,
+  options,
+  placeholder,
+  helperText = "Pick a suggestion, or type your own and press Enter.",
+  maxResults,
+  minChars,
+}) => {
   const [draft, setDraft] = useState("");
 
   const addValue = (val) => {
@@ -49,6 +57,8 @@ const TagAutocompleteInput = ({ values, onChange, fetchOptions, options, placeho
         fetchOptions={fetchOptions}
         options={options}
         placeholder={placeholder}
+        maxResults={maxResults}
+        minChars={minChars}
         onKeyDown={(e) => {
           if (e.key === "Enter" && draft.trim()) {
             e.preventDefault();
@@ -57,7 +67,7 @@ const TagAutocompleteInput = ({ values, onChange, fetchOptions, options, placeho
         }}
         className="w-full px-4 py-3 rounded-xl border border-ink/10 focus-ring"
       />
-      <p className="text-xs text-muted mt-1">Pick a suggestion, or type a value and press Enter.</p>
+      {helperText && <p className="text-xs text-muted mt-1">{helperText}</p>}
     </div>
   );
 };

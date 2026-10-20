@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import generateToken from "../utils/generateToken.js";
 import { sendEmail, emailTemplates } from "../utils/emailService.js";
 import { notify } from "../utils/notify.js";
+import { uploadBuffer } from "../utils/cloudinaryUpload.js";
 
 // @desc    Register new user
 // @route   POST /api/auth/register
@@ -110,8 +111,13 @@ export const updateMe = asyncHandler(async (req, res) => {
     "skills",
     "resumeUrl",
     "experienceYears",
+    "experienceMonths",
+    "experienceStatus",
     "location",
+    "address",
+    "highestEducation",
     "education",
+    "profileCompleted",
     "desiredRole",
     "preferredLocations",
     "preferredJobTypes",
@@ -127,6 +133,12 @@ export const updateMe = asyncHandler(async (req, res) => {
   allowedFields.forEach((field) => {
     if (req.body[field] !== undefined) updates[field] = req.body[field];
   });
+
+  // Flag sirf true ho sakta hai, wapas false nahi hota
+  if (updates.profileCompleted !== undefined) {
+    if (updates.profileCompleted === true) updates.profileCompleted = true;
+    else delete updates.profileCompleted;
+  }
 
   // Email is handled separately — it needs a uniqueness check against other users
   if (req.body.email !== undefined) {
@@ -149,7 +161,7 @@ export const updateMe = asyncHandler(async (req, res) => {
   res.json({ success: true, data: user });
 });
 
-// @desc    Upload/replace resume file on profile
+// @desc    Upload/replace resume file on profile (Cloudinary par save hota hai)
 // @route   POST /api/auth/me/resume
 // @access  Private/Jobseeker
 export const uploadProfileResume = asyncHandler(async (req, res) => {
@@ -158,7 +170,19 @@ export const uploadProfileResume = asyncHandler(async (req, res) => {
     throw new Error("No file uploaded");
   }
 
-  const resumeUrl = `/uploads/resumes/${req.file.filename}`;
+  let resumeUrl;
+  try {
+    resumeUrl = await uploadBuffer(req.file.buffer, {
+      folder: "resumes",
+      resourceType: "raw",
+      originalName: req.file.originalname,
+    });
+  } catch (err) {
+    console.error("Resume upload failed:", err.message);
+    res.status(502);
+    throw new Error("Could not upload your resume right now. Please try again.");
+  }
+
   const user = await User.findByIdAndUpdate(
     req.user._id,
     { resumeUrl },
@@ -168,10 +192,7 @@ export const uploadProfileResume = asyncHandler(async (req, res) => {
   res.json({ success: true, data: user });
 });
 
-// @desc    Request a password reset email
-// @route   POST /api/auth/forgot-password
-// @access  Public
-// @desc    Upload/replace profile photo
+// @desc    Upload/replace profile photo (Cloudinary par save hota hai)
 // @route   POST /api/auth/me/photo
 // @access  Private
 export const uploadProfilePhoto = asyncHandler(async (req, res) => {
@@ -180,7 +201,19 @@ export const uploadProfilePhoto = asyncHandler(async (req, res) => {
     throw new Error("No file uploaded");
   }
 
-  const profilePhotoUrl = `/uploads/photos/${req.file.filename}`;
+  let profilePhotoUrl;
+  try {
+    profilePhotoUrl = await uploadBuffer(req.file.buffer, {
+      folder: "photos",
+      resourceType: "image",
+      originalName: req.file.originalname,
+    });
+  } catch (err) {
+    console.error("Photo upload failed:", err.message);
+    res.status(502);
+    throw new Error("Could not upload your photo right now. Please try again.");
+  }
+
   const user = await User.findByIdAndUpdate(
     req.user._id,
     { profilePhotoUrl },
@@ -190,6 +223,9 @@ export const uploadProfilePhoto = asyncHandler(async (req, res) => {
   res.json({ success: true, data: user });
 });
 
+// @desc    Request a password reset email
+// @route   POST /api/auth/forgot-password
+// @access  Public
 export const forgotPassword = asyncHandler(async (req, res) => {
   const email = (req.body.email || "").trim().toLowerCase();
   const user = await User.findOne({ email });

@@ -76,7 +76,7 @@ const getFallbackMCQ = (jobTitle = "") => {
 export const screenResume = async ({ jobTitle, jobDescription, jobRequirements, resumeText }) => {
   const system = `You are a strict technical recruiter evaluating a candidate's resume for "${jobTitle}".
 Score strictly from 0 to 100 based on relevant experience, skills, and qualifications.
-Threshold rule: 70 or above means shortlisted for the role.
+Threshold rule: 72 or above means shortlisted for the role.
 Respond strictly in JSON:
 {"score": <integer 0-100>, "summary": "<assessment text>", "strengths": ["<str>"], "gaps": ["<gap>"]}`;
 
@@ -89,8 +89,9 @@ CANDIDATE RESUME: ${(resumeText || "").slice(0, 7000)}`;
     const text = await callGemini({ system, prompt, maxTokens: 1000 });
     return extractJSON(text);
   } catch (err) {
-    return { score: 72, summary: "Resume matches core qualifications.", strengths: ["Domain knowledge"], gaps: [] };
-  }
+  console.warn("Resume screening failed:", err.message);
+  throw err;
+}
 };
 
 /**

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import api from "../api/axios.js";
+import { distanceKm, formatKm } from "../utils/distance.js";
 
 const formatSalary = (min, max, currency) => {
   if (!min && !max) return null;
@@ -15,6 +16,16 @@ const JobCard = ({ job, initiallySaved = false, onUnsave }) => {
   const salary = formatSalary(job.salaryMin, job.salaryMax, job.currency);
   const [saved, setSaved] = useState(initiallySaved);
   const [saving, setSaving] = useState(false);
+
+  // Candidate se job kitni door hai (dono ke coordinates hon tabhi)
+  const userCoords =
+    user?.role === "jobseeker" && user?.coordinates?.lat != null && user?.coordinates?.lng != null
+      ? user.coordinates
+      : null;
+  const jobCoords =
+    job.coordinates?.lat != null && job.coordinates?.lng != null ? job.coordinates : null;
+  const km =
+    userCoords && jobCoords && job.workMode !== "remote" ? distanceKm(userCoords, jobCoords) : null;
 
   const handleToggleSave = async (e) => {
     e.preventDefault();
@@ -86,6 +97,9 @@ const JobCard = ({ job, initiallySaved = false, onUnsave }) => {
             {job.title}
           </h3>
           <p className="text-sm text-muted mt-1">{job.companyName} · {job.location}</p>
+          {km !== null && (
+            <p className="text-xs font-medium text-success mt-1">📍 {formatKm(km)} away</p>
+          )}
         </div>
         <span className="shrink-0 text-xs font-mono uppercase tracking-wide px-2.5 py-1 rounded-full bg-ink/5 text-ink/70">
           {job.workMode}

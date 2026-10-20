@@ -1,6 +1,33 @@
 import asyncHandler from "express-async-handler";
 import Job from "../models/Job.js";
 import User from "../models/User.js";
+import { escapeRegex, locationTokens } from "../utils/locationMatch.js";
+
+const EXPERIENCE_RANGES = {
+  entry: [0, 2],
+  mid: [2, 5],
+  senior: [5, 9],
+  lead: [8, 50],
+};
+
+const RECOMMENDED_LIMIT = 25;
+const NEARBY_RADIUS_KM = 100; // itni doori tak ki jobs pool mein aayengi
+
+const hasCoords = (c) => c && typeof c.lat === "number" && typeof c.lng === "number";
+
+// Do coordinates ke beech seedhi-line doori (km)
+const haversineKm = (a, b) => {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+
+const kmLabel = (km) => (km < 1 ? "Less than 1 km from you" : `About ${Math.round(km)} km from you`);
 
 // @desc    Get all jobs (with search, filters, pagination)
 // @route   GET /api/jobs
@@ -21,12 +48,27 @@ export const getJobs = asyncHandler(async (req, res) => {
   } = req.query;
 
   const query = { status: "active" };
+  const andConditions = [];
 
   if (keyword) {
-    const kwRegex = new RegExp(keyword, "i");
-    query.$or = [{ title: kwRegex }, { companyName: kwRegex }, { skills: kwRegex }, { description: kwRegex }];
+    const kwRegex = new RegExp(escapeRegex(keyword), "i");
+    andConditions.push({
+      $or: [{ title: kwRegex }, { companyName: kwRegex }, { skills: kwRegex }, { description: kwRegex }],
+    });
   }
-  if (location) query.location = { $regex: location, $options: "i" };
+
+  if (location) {
+    // "Sector 15, Noida, Uttar Pradesh, India" -> sirf "noida" dhoondta hai
+    const tokens = locationTokens(location);
+    if (tokens.length > 0) {
+      andConditions.push({
+        $or: tokens.map((t) => ({ location: new RegExp(escapeRegex(t), "i") })),
+      });
+    }
+  }
+
+  if (andConditions.length > 0) query.$and = andConditions;
+
   if (jobType) query.jobType = jobType;
   if (workMode) query.workMode = workMode;
   if (experienceLevel) query.experienceLevel = experienceLevel;
@@ -42,7 +84,7 @@ export const getJobs = asyncHandler(async (req, res) => {
       .map((s) => s.trim())
       .filter(Boolean);
     if (skillList.length > 0) {
-      query.skills = { $in: skillList.map((s) => new RegExp(s, "i")) };
+      query.skills = { $in: skillList.map((s) => new RegExp(escapeRegex(s), "i")) };
     }
   }
 
@@ -189,66 +231,153 @@ export const getSavedJobs = asyncHandler(async (req, res) => {
   res.json({ success: true, data: user.savedJobs });
 });
 
-// @desc    Get jobs recommended for the logged-in jobseeker, based on skill overlap
+// @desc    Up to 25 jobs for the logged-in jobseeker: nearby (km), preferred city, matching skills, role, industry
 // @route   GET /api/jobs/recommended/mine
 // @access  Private/Jobseeker
 export const getRecommendedJobs = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
 
-  const hasSkills = user.skills && user.skills.length > 0;
-  const hasIndustries = user.preferredIndustries && user.preferredIndustries.length > 0;
+  const userSkills = (user.skills || []).map((s) => s.trim()).filter(Boolean);
+  const userSkillSet = new Set(userSkills.map((s) => s.toLowerCase()));
 
-  if (!hasSkills && !hasIndustries) {
-    return res.json({
-      success: true,
-      data: [],
-      message: "Add skills or preferred industries to your profile to get recommendations.",
+  // "Sector 15, Noida, Uttar Pradesh, India" jaisi poori string se sirf shehar/area nikalte hain
+  const preferredTokens = [
+    ...new Set((user.preferredLocations || []).flatMap((l) => locationTokens(l))),
+  ];
+  const homeTokens = locationTokens(user.location);
+  const userCoords = hasCoords(user.coordinates)
+    ? { lat: user.coordinates.lat, lng: user.coordinates.lng }
+    : null;
+
+  const industries = user.preferredIndustries || [];
+  const desiredRole = (user.desiredRole || "").trim().toLowerCase();
+
+  // Candidate pool: koi bhi ek cheez match kare to job pool mein aayegi
+  const orConditions = [];
+  if (userSkills.length) {
+    orConditions.push({ skills: { $in: userSkills.map((s) => new RegExp(escapeRegex(s), "i")) } });
+  }
+  if (industries.length) {
+    orConditions.push({ category: { $in: industries } });
+  }
+  [...preferredTokens, ...homeTokens].forEach((token) => {
+    orConditions.push({ location: new RegExp(escapeRegex(token), "i") });
+  });
+  if (desiredRole) {
+    orConditions.push({ title: new RegExp(escapeRegex(desiredRole), "i") });
+  }
+  if (userCoords) {
+    // Candidate ke aas-paas (lagbhag 100 km) ka dabba, coordinates se
+    const latDelta = NEARBY_RADIUS_KM / 111;
+    const lngDelta =
+      NEARBY_RADIUS_KM / (111 * Math.max(Math.cos((userCoords.lat * Math.PI) / 180), 0.2));
+    orConditions.push({
+      "coordinates.lat": { $gte: userCoords.lat - latDelta, $lte: userCoords.lat + latDelta },
+      "coordinates.lng": { $gte: userCoords.lng - lngDelta, $lte: userCoords.lng + lngDelta },
     });
   }
 
-  const candidateQuery = { status: "active", $or: [] };
-  if (hasSkills) {
-    const skillPatterns = user.skills.map((s) => new RegExp(s, "i"));
-    candidateQuery.$or.push({ skills: { $in: skillPatterns } });
-  }
-  if (hasIndustries) {
-    candidateQuery.$or.push({ category: { $in: user.preferredIndustries } });
+  if (orConditions.length === 0) {
+    return res.json({
+      success: true,
+      data: [],
+      message: "Add your location, skills or preferred cities to your profile to get recommendations.",
+    });
   }
 
-  const candidates = await Job.find(candidateQuery)
+  const candidates = await Job.find({ status: "active", $or: orConditions })
     .populate("employer", "companyName companyLogoUrl")
-    .limit(150); // cap the candidate pool before scoring
+    .limit(300);
 
-  const preferredLocations = (user.preferredLocations || []).map((l) => l.toLowerCase());
+  const experienceYears = user.experienceYears || 0;
 
   const scored = candidates
     .map((job) => {
-      let score = hasSkills
-        ? job.skills.filter((skill) => user.skills.some((us) => us.toLowerCase() === skill.toLowerCase())).length
-        : 0;
+      const jobLocation = (job.location || "").toLowerCase();
+      const km =
+        userCoords && hasCoords(job.coordinates) ? haversineKm(userCoords, job.coordinates) : null;
+      const reasons = [];
+      let score = 0;
+      let locationMatch = "none";
 
-      if (hasIndustries && user.preferredIndustries.includes(job.category)) {
-        score += 3;
-      }
-      if (user.desiredRole && job.title.toLowerCase().includes(user.desiredRole.toLowerCase())) {
-        score += 2;
-      }
-      if (preferredLocations.some((loc) => job.location.toLowerCase().includes(loc))) {
-        score += 1;
-      }
-      if (user.preferredJobTypes?.includes(job.jobType)) {
-        score += 1;
-      }
-      if (user.preferredWorkModes?.includes(job.workMode)) {
-        score += 1;
+      // 1. Location (max 35) — sabse zyada weight
+      if (preferredTokens.some((token) => jobLocation.includes(token))) {
+        score += 35;
+        locationMatch = "preferred";
+        reasons.push("In your preferred city");
+      } else if (km !== null && km <= 25) {
+        score += 30;
+        locationMatch = "near";
+        reasons.push(kmLabel(km));
+      } else if (km !== null && km <= 50) {
+        score += 22;
+        locationMatch = "near";
+        reasons.push(kmLabel(km));
+      } else if (homeTokens.some((token) => jobLocation.includes(token))) {
+        score += 25;
+        locationMatch = "near";
+        reasons.push("Near your location");
+      } else if (job.workMode === "remote" && user.preferredWorkModes?.includes("remote")) {
+        score += 20;
+        locationMatch = "remote";
+        reasons.push("Remote role");
+      } else if (km !== null && km <= NEARBY_RADIUS_KM) {
+        score += 12;
+        locationMatch = "near";
+        reasons.push(kmLabel(km));
       }
 
-      return { job, score };
+      // 2. Skills (max 30)
+      const jobSkills = job.skills || [];
+      const matchedSkills = jobSkills.filter((s) => userSkillSet.has(s.toLowerCase()));
+      const missingSkills = jobSkills.filter((s) => !userSkillSet.has(s.toLowerCase())).slice(0, 4);
+      if (jobSkills.length > 0) {
+        score += Math.round((30 * matchedSkills.length) / jobSkills.length);
+        if (matchedSkills.length > 0) {
+          reasons.push(`${matchedSkills.length}/${jobSkills.length} skills match`);
+        }
+      }
+
+      // 3. Desired role (max 12)
+      if (desiredRole && (job.title || "").toLowerCase().includes(desiredRole)) {
+        score += 12;
+        reasons.push("Matches your desired role");
+      }
+
+      // 4. Industry (max 8)
+      if (industries.includes(job.category)) {
+        score += 8;
+        reasons.push("Your preferred industry");
+      }
+
+      // 5. Experience level (max 7)
+      const range = EXPERIENCE_RANGES[job.experienceLevel];
+      if (range && experienceYears >= range[0] && experienceYears <= range[1]) {
+        score += 7;
+        reasons.push("Fits your experience level");
+      }
+
+      // 6. Job type & work mode (max 4 + 4)
+      if (user.preferredJobTypes?.includes(job.jobType)) score += 4;
+      if (user.preferredWorkModes?.includes(job.workMode)) score += 4;
+
+      return {
+        score,
+        km,
+        item: {
+          ...job.toObject(),
+          matchPercent: Math.min(100, score),
+          matchReasons: reasons,
+          missingSkills,
+          locationMatch,
+          distanceKm: km !== null ? Math.round(km * 10) / 10 : null,
+        },
+      };
     })
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 12)
-    .map((s) => s.job);
+    .filter((s) => s.score >= 15)
+    .sort((a, b) => b.score - a.score || (a.km ?? 1e9) - (b.km ?? 1e9))
+    .slice(0, RECOMMENDED_LIMIT)
+    .map((s) => s.item);
 
   res.json({ success: true, data: scored });
 });
@@ -280,7 +409,7 @@ export const getSearchSuggestions = asyncHandler(async (req, res) => {
     return res.json({ success: true, data: { titles: [], skills: [], locations: [], companies: [] } });
   }
 
-  const regex = new RegExp(q, "i");
+  const regex = new RegExp(escapeRegex(q), "i");
 
   const matchingJobs = await Job.find({
     status: "active",

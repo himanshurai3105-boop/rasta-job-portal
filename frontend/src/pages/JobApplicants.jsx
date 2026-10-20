@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import api, { SERVER_ORIGIN } from "../api/axios.js";
+import api, { fileUrl } from "../api/axios.js";
 import { RowSkeleton } from "../components/Skeletons.jsx";
 
 const STATUSES = ["applied", "shortlisted", "interview", "rejected", "hired"];
@@ -84,7 +84,7 @@ const JobApplicants = () => {
                   </span>
                   {app.resumeUrl && (
                     <a
-                      href={`${SERVER_ORIGIN}${app.resumeUrl}`}
+                      href={fileUrl(app.resumeUrl)}
                       target="_blank"
                       rel="noreferrer"
                       className="text-xs text-slateblue hover:underline"

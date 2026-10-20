@@ -4,8 +4,12 @@ import Job from "../models/Job.js";
 import User from "../models/User.js";
 import { sendEmail, emailTemplates } from "../utils/emailService.js";
 import { notify } from "../utils/notify.js";
-import { extractResumeText } from "../utils/resumeParser.js";
+import { extractResumeText, extractResumeTextFromUrl } from "../utils/resumeParser.js";
+import { uploadBuffer } from "../utils/cloudinaryUpload.js";
 import { screenResume, getNextInterviewQuestion, evaluateInterview, generateMCQTest } from "../utils/aiService.js";
+
+const TEST_PASS_MARK = 8; // 10 mein se kam se kam 8 sahi
+const RESUME_PASS_SCORE = 72; // AI resume match ka cutoff
 
 // @desc    Apply to a job (with resume upload) -> Screens Resume -> Auto triggers test eligibility
 // @route   POST /api/applications/:jobId
@@ -30,15 +34,37 @@ export const applyToJob = asyncHandler(async (req, res) => {
   let resumeText = "";
 
   if (req.file) {
-    resumeUrl = `/uploads/resumes/${req.file.filename}`;
+    // Candidate ne is application ke liye alag resume diya
+    // 1. Resume Cloudinary par upload karo
     try {
-      resumeText = (await extractResumeText(req.file.path)) || "";
+      resumeUrl = await uploadBuffer(req.file.buffer, {
+        folder: "resumes",
+        resourceType: "raw",
+        originalName: req.file.originalname,
+      });
+    } catch (e) {
+      console.error("Resume upload failed:", e.message);
+      res.status(502);
+      throw new Error("Could not upload your resume right now. Please try again.");
+    }
+
+    // 2. Screening ke liye memory se text nikalo
+    try {
+      resumeText = (await extractResumeText(req.file.buffer, req.file.originalname)) || "";
+    } catch (e) {
+      resumeText = "";
+    }
+  } else if (req.user.resumeUrl) {
+    // Candidate ne profile wala resume hi use kiya: usse bhi screen karo
+    resumeUrl = req.user.resumeUrl;
+    try {
+      resumeText = (await extractResumeTextFromUrl(resumeUrl)) || "";
     } catch (e) {
       resumeText = "";
     }
   }
 
-  // Initial resume screening score (Threshold: 70%)
+  // Initial resume screening score (Threshold: 72%)
   let aiScreeningData = {
     score: null,
     summary: "",
@@ -74,7 +100,7 @@ export const applyToJob = asyncHandler(async (req, res) => {
     applicant: req.user._id,
     employer: job.employer,
     coverLetter: req.body.coverLetter || "",
-    resumeUrl: resumeUrl || req.user.resumeUrl || "",
+    resumeUrl,
     resumeText,
     status: "applied",
     aiScreening: aiScreeningData,
@@ -272,7 +298,7 @@ export const startMCQTest = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Submit MCQ answers — Strict 80% (8/10) threshold + 70% Resume check
+// @desc    Submit MCQ answers — pass mark 8/10. Resume (72%+) decides auto-shortlist vs company review pool.
 // @route   POST /api/applications/:id/mcq/submit
 // @access  Private/Jobseeker (owner only)
 export const submitMCQTest = asyncHandler(async (req, res) => {
@@ -317,30 +343,48 @@ export const submitMCQTest = asyncHandler(async (req, res) => {
   application.mcqTest.submittedAt = new Date();
   application.mcqTest.status = timedOut ? "failed_timeout" : "completed";
 
-  // Strict Thresholds:
-  const testPassed = !timedOut && score >= 8; // Exactly 80% (8 out of 10)
-  const resumePassed = (application.aiScreening?.score || 0) >= 70; // 70% AI resume cutoff
+  // Pass mark: 8/10 (chahe koi bhi resume use hua ho)
+  const testPassed = !timedOut && score >= TEST_PASS_MARK;
+
+  // Resume tabhi ginte hain jab uska screening sach mein ho paya ho
+  const resumeScore = application.aiScreening?.score;
+  const resumeScreened = application.aiScreening?.status === "completed" && typeof resumeScore === "number";
+  const resumePassed = resumeScreened && resumeScore >= RESUME_PASS_SCORE;
+
+  let message;
 
   if (testPassed && resumePassed) {
     // Top Tier: Auto-shortlisted for direct interview
     application.mcqTest.autoShortlisted = true;
     application.status = "shortlisted";
+    message = `Congratulations! You scored ${score}/10 and your resume matched ${resumeScore}%. Your application has been shortlisted!`;
 
     notify({
       user: application.employer,
       type: "status_update",
       title: "Top Candidate Auto-Shortlisted!",
-      message: `A candidate scored ${score}/10 on the test and ${application.aiScreening.score}% on resume screening for "${application.job.title}".`,
+      message: `A candidate scored ${score}/10 on the test and ${resumeScore}% on resume screening for "${application.job.title}".`,
       link: `/employer/jobs/${application.job._id}/applicants`,
     });
-  } else if (resumePassed && !testPassed) {
-    // Tier 2: Shortlisted Resume Pool (Company can review)
+  } else if (testPassed) {
+    // Test pass, par resume 72% se kam hai ya screen nahi ho paya: reject nahi, company review karegi
     application.mcqTest.autoShortlisted = false;
     application.status = "applied";
+    message = resumeScreened
+      ? `You cleared the test with ${score}/10, but your resume match (${resumeScore}%) is below ${RESUME_PASS_SCORE}%. Your application is saved in the company's review pool.`
+      : `You cleared the test with ${score}/10. Your resume could not be screened automatically, so your application is saved in the company's review pool.`;
+  } else if (resumePassed) {
+    // Tier 2: Resume achha hai par test 8/10 se kam
+    application.mcqTest.autoShortlisted = false;
+    application.status = "applied";
+    message = `Your resume matched ${resumeScore}%, but you scored ${score}/10 and the pass mark is ${TEST_PASS_MARK}/10. Your application is saved in the company's review pool.`;
   } else {
-    // Under 80% test and low resume match -> Direct Rejected
+    // Test 8/10 se kam aur resume bhi qualify nahi hua
     application.mcqTest.autoShortlisted = false;
     application.status = "rejected";
+    message = timedOut
+      ? "Sorry, the time limit was over before you submitted, so you could not qualify."
+      : `Sorry, you can't qualify. A minimum of ${TEST_PASS_MARK}/10 is required.`;
   }
 
   await application.save();
@@ -352,13 +396,9 @@ export const submitMCQTest = asyncHandler(async (req, res) => {
       total: application.mcqTest.questions.length,
       status: application.status,
       testPassed,
-      resumeScore: application.aiScreening?.score,
+      resumeScore: resumeScreened ? resumeScore : null,
       autoShortlisted: application.mcqTest.autoShortlisted,
-      message: (testPassed && resumePassed)
-        ? "Congratulations! You cleared both Resume Screening (70%+) and Technical Test (80%+). Your application has been shortlisted!"
-        : resumePassed
-        ? "Your resume was shortlisted (70%+), but you scored under 80% on the test. Your application is saved in the company's review pool."
-        : "Sorry, you can't qualify the test. A minimum of 80% (8/10) is required.",
+      message,
     },
   });
 });
@@ -567,7 +607,7 @@ export const getEmployerAnalytics = asyncHandler(async (req, res) => {
     statusBreakdown[app.status] = (statusBreakdown[app.status] || 0) + 1;
   });
 
-const days = [];
+  const days = [];
   const today = new Date();
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today);

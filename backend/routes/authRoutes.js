@@ -9,6 +9,7 @@ import {
   forgotPassword,
   resetPassword,
 } from "../controllers/authController.js";
+import { lookupPincode } from "../controllers/geoController.js";
 import { protect, authorize } from "../middleware/auth.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 import { validate } from "../middleware/validate.js";
@@ -30,6 +31,7 @@ router.post("/forgot-password", authLimiter, forgotPasswordValidator, validate, 
 router.post("/reset-password/:token", authLimiter, resetPasswordValidator, validate, resetPassword);
 router.get("/me", protect, getMe);
 router.put("/me", protect, updateMeValidator, validate, updateMe);
+router.get("/pincode/:pincode", protect, lookupPincode);
 router.post(
   "/me/resume",
   protect,

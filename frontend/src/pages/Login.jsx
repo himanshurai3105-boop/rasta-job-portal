@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { calculateCompletion, COMPLETION_THRESHOLD } from "../utils/profileCompletion.js";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -18,7 +19,9 @@ const Login = () => {
       const data = await login(email, password);
       if (data.role === "admin") navigate("/admin");
       else if (data.role === "employer") navigate("/employer/dashboard");
-      else navigate("/jobs");
+      // Ek baar complete ho chuka profile hamesha seedha Jobs page par jayega
+      else if (data.profileCompleted || calculateCompletion(data) >= COMPLETION_THRESHOLD) navigate("/jobs");
+      else navigate("/profile", { state: { incomplete: true } });
     } catch (err) {
       setError(err.response?.data?.message || "Login failed");
     } finally {

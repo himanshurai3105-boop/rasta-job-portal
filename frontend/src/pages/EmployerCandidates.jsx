@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api, { SERVER_ORIGIN } from "../api/axios.js";
+import api, { fileUrl } from "../api/axios.js";
 import { RowSkeleton } from "../components/Skeletons.jsx";
 
 const statusColor = {
@@ -127,7 +127,7 @@ const EmployerCandidates = () => {
               </div>
               {c.applicant.resumeUrl && (
                 <a
-                  href={`${SERVER_ORIGIN}${c.applicant.resumeUrl}`}
+                  href={fileUrl(c.applicant.resumeUrl)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-block mt-3 text-xs text-slateblue hover:underline"
